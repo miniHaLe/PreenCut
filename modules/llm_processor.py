@@ -49,7 +49,7 @@ class LLMProcessor:
         )
 
         # Combined complete prompt
-        full_prompt = f"{user_prompt}\n\Subtitle content:\n{subtitles}"
+        full_prompt = f"{user_prompt}\nSubtitle content:\n{subtitles}"
 
         # Calling the OpenAI API
         response = self.client.chat.completions.create(

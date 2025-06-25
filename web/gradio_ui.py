@@ -243,7 +243,7 @@ def clip_and_download(status_display: Dict,
         return output_files[0]
 
     # Process according to the mode selected by the user
-    if download_mode == "合并成一个文件":
+    if download_mode == "Merge into one file":
         # Merge multiple files
         ext = clips_by_file[next(iter(clips_by_file))]['ext']  # Get the extension of the first file
         combined_path = os.path.join(task_output_dir, f"combined_output{ext}")
@@ -309,8 +309,8 @@ def reanalyze_with_prompt(task_id: str, reanalyze_llm_model: str,
         updated_results = []
 
         for file_data in task_result["result"]:
-            new_segments = llm.segment_video(file_data["align_result"],
-                                             new_prompt)
+            new_segments = llm.segment_video(
+                file_data["align_result"]["segments"], new_prompt)
             updated_results.append({
                 "filename": file_data["filename"],
                 "filepath": file_data["filepath"],
