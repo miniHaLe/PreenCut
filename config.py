@@ -39,7 +39,7 @@ def get_device_config():
 ALLOWED_EXTENSIONS = ['mp4', 'avi', 'mov', 'mkv', 'ts', 'mxf', 'mp3', 'wav',
                       'flac']
 MAX_FILE_SIZE = 10 * 1024 * 1024 * 1024  # 10GB
-MAX_FILE_NUMBERS = 10  # 最大文件数量
+MAX_FILE_NUMBERS = 10  # Maximum number of files
 
 # Temporary folder
 TEMP_FOLDER = "./temp"
@@ -58,34 +58,103 @@ WHISPER_GPU_IDS = AVAILABLE_GPUS
 WHISPER_COMPUTE_TYPE = 'float16' if WHISPER_DEVICE == 'cuda' else 'float32'  # float16, float32, int8
 WHISPER_BATCH_SIZE = 16  # Batch size
 
+# Language settings - Force Vietnamese detection
+WHISPER_LANGUAGE = 'vi'  # Vietnamese language code
+WHISPER_AUTO_DETECT_LANGUAGE = False  # Disable automatic language detection
+
 FASTER_WHISPER_BEAM_SIZE = 5
-
-
 
 # Speech-to-text alignment model
 ENABLE_ALIGNMENT = True  # Whether to enable alignment
 ALIGNMENT_MODEL = 'whisperx'  # Alignment model used
 
-# OpenAI API Configuration
+# Ollama LLM Configuration
 LLM_MODEL_OPTIONS = [
     {
-        "model": "deepseek-v3-0324",
-        "base_url": "https://api.lkeap.cloud.tencent.com/v1",
-        "api_key_env_name": "DEEPSEEK_V3_API_KEY",
-        "label": "DeepSeek-V3-0324",
+        "model": "qwen3:8b-q8_0",
+        "base_url": "http://localhost:11434",
+        "label": "Qwen3 8B",
         "max_tokens": 4096,
         "temperature": 0.3,
     },
     {
-        "model": "doubao-1-5-pro-32k-250115",
-        "base_url": "https://ark.cn-beijing.volces.com/api/v3",
-        "api_key_env_name": "DOUBAO_1_5_PRO_API_KEY",
-        "label": "Bean buns",
+        "model": "hf.co/unsloth/gemma-3-27b-it-qat-GGUF:Q8_K_XL",
+        "base_url": "http://localhost:11434",
+        "label": "Gemma3 27B",
         "max_tokens": 4096,
         "temperature": 0.3,
     }
 ]
 
+# Alternative configuration for mixed OpenAI API + Ollama setup
+# Uncomment and modify if you want to keep some OpenAI API models alongside Ollama
+"""
+LLM_MODEL_OPTIONS = [
+    # Ollama models (local)
+    {
+        "model": "llama3.1:8b",
+        "base_url": "http://localhost:11434",
+        "label": "Llama 3.1 8B (Ollama)",
+        "max_tokens": 4096,
+        "temperature": 0.3,
+        "type": "ollama"
+    },
+    {
+        "model": "qwen2.5:7b",
+        "base_url": "http://localhost:11434",
+        "label": "Qwen 2.5 7B (Ollama)",
+        "max_tokens": 4096,
+        "temperature": 0.3,
+        "type": "ollama"
+    },
+    # OpenAI API compatible models
+    {
+        "model": "deepseek-v3-0324",
+        "base_url": "https://api.lkeap.cloud.tencent.com/v1",
+        "api_key_env_name": "sk-b1aa3a0cffd44265bbc89334a8b79a66",
+        "label": "DeepSeek-V3-0324 (API)",
+        "max_tokens": 4096,
+        "temperature": 0.3,
+        "type": "openai"
+    }
+]
+"""
+
+# Ollama configuration
+OLLAMA_DEFAULT_HOST = "localhost"
+OLLAMA_DEFAULT_PORT = 11434
+OLLAMA_TIMEOUT = 120  # seconds
+OLLAMA_KEEP_ALIVE = "5m"  # Keep model loaded for 5 minutes after last request
+
+# Helper function to get Ollama base URL
+def get_ollama_url(host=OLLAMA_DEFAULT_HOST, port=OLLAMA_DEFAULT_PORT):
+    """Generate Ollama API base URL"""
+    return f"http://{host}:{port}"
+
+# Helper function to check if a model is available in Ollama
+def check_ollama_model_availability():
+    """Check which models are actually available in your Ollama installation"""
+    import requests
+    try:
+        url = get_ollama_url()
+        response = requests.get(f"{url}/api/tags", timeout=5)
+        if response.status_code == 200:
+            models = response.json().get("models", [])
+            available_models = [model["name"] for model in models]
+            print(f"Available Ollama models: {available_models}")
+            return available_models
+        else:
+            print(f"Failed to connect to Ollama: HTTP {response.status_code}")
+            return []
+    except Exception as e:
+        print(f"Error checking Ollama models: {e}")
+        return []
+
 # Create the necessary directories
 for folder in [TEMP_FOLDER, OUTPUT_FOLDER]:
     os.makedirs(folder, exist_ok=True)
+
+# Optional: Check available models on startup
+if __name__ == "__main__":
+    print("Checking available Ollama models...")
+    check_ollama_model_availability()

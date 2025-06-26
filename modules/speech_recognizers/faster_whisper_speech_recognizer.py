@@ -12,8 +12,9 @@ class FasterWhisperSpeechRecognizer(SpeechRecognizer):
             device,
             device_index,
             compute_type,
-            batch_size=16,
+            batch_size=32,
             beam_size=5,
+            language="vi"
     ):
         super().__init__(model_size, device, device_index=device_index, compute_type=compute_type,
                          batch_size=batch_size)
@@ -33,7 +34,7 @@ class FasterWhisperSpeechRecognizer(SpeechRecognizer):
 
     def transcribe(self, audio_path: str):
         """Transcribe audio files to text"""
-        # 确保音频文件存在
+        # Make sure the audio file exists
         self.before_transcribe(audio_path)
         print(f"get audio data: {audio_path}")
         print(f"batch size = {self.batch_size}")
@@ -41,7 +42,8 @@ class FasterWhisperSpeechRecognizer(SpeechRecognizer):
         print("load audio success")
         segments, info = self.model.transcribe(
             audio,
-            beam_size=self.beam_size
+            beam_size=self.beam_size,
+            language=self.language
         )
         segment_list = []
         for segment in segments:

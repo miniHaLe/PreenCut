@@ -10,8 +10,8 @@ from web.api import router as api_router
 
 import logging
 
-# 屏蔽访问日志
-block_endpoints = "/"
+# Block access logs
+block_endpoints = "./"
 
 
 class LogFilter(logging.Filter):
@@ -28,7 +28,7 @@ uvicorn_logger.addFilter(LogFilter())
 
 app = FastAPI()
 
-# 跨域中间件
+# Cross-domain middleware
 origins = ["*"]
 app.add_middleware(
     CORSMiddleware,
@@ -37,33 +37,33 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# 添加api路由
+# Adding API Routes
 app.include_router(api_router)
 
-# 检查GPU可用性
+# Check GPU availability
 try:
     import torch
 
     if torch.cuda.is_available():
-        print("✅ 检测到GPU可用，将使用GPU加速")
+        print("✅ If a GPU is detected to be available, GPU acceleration will be used")
     else:
-        print("⚠️ 未检测到GPU，将使用CPU运行")
+        print("⚠️ No GPU detected, will run using CPU")
 except ImportError:
-    print("⚠️ 无法导入torch，GPU状态未知")
+    print("⚠️ Unable to import torch, GPU status unknown")
 
-# 打印当前配置
-print("\n当前配置:")
-print(f"  语音识别处理模块: {config.SPEECH_RECOGNIZER_TYPE}")
-print(f"  模型大小: {config.WHISPER_MODEL_SIZE}")
-print(f"  计算设备: {config.WHISPER_DEVICE}")
-print(f"  计算类型: {config.WHISPER_COMPUTE_TYPE}")
-print(f"  使用GPU: {config.WHISPER_GPU_IDS}")
-print(f"  批处理大小: {config.WHISPER_BATCH_SIZE}")
+# Print the current configuration
+print("Current Configuration:")
+print(f"  Speech recognition processing module: {config.SPEECH_RECOGNIZER_TYPE}")
+print(f"  Model size: {config.WHISPER_MODEL_SIZE}")
+print(f"  Computing equipment: {config.WHISPER_DEVICE}")
+print(f"  Calculation Type: {config.WHISPER_COMPUTE_TYPE}")
+print(f"  Using GPU: {config.WHISPER_GPU_IDS}")
+print(f"  Batch size: {config.WHISPER_BATCH_SIZE}")
 
-# 创建Gradio界面
+# Creating the Gradio Interface
 gradio_app = create_gradio_interface()
 app = gr.mount_gradio_app(app, gradio_app, path="/web")
 
 if __name__ == "__main__":
-    # 启动应用
+    # Start the application
     uvicorn.run(app, host="localhost", port=8860)

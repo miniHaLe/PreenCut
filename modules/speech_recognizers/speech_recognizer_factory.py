@@ -9,7 +9,8 @@ from config import (
     WHISPER_COMPUTE_TYPE,
     WHISPER_GPU_IDS,
     WHISPER_BATCH_SIZE,
-    FASTER_WHISPER_BEAM_SIZE
+    FASTER_WHISPER_BEAM_SIZE,
+    WHISPER_LANGUAGE
 )
 
 
@@ -25,7 +26,8 @@ class SpeechRecognizerFactory:
                 WHISPER_DEVICE,
                 compute_type=WHISPER_COMPUTE_TYPE,
                 device_index=WHISPER_GPU_IDS,
-                beam_size=FASTER_WHISPER_BEAM_SIZE
+                beam_size=FASTER_WHISPER_BEAM_SIZE,
+                language=WHISPER_LANGUAGE
             )
         elif type == 'whisperx':
             speech_recognizer = WhisperXSpeechRecognizer(
@@ -33,7 +35,8 @@ class SpeechRecognizerFactory:
                 WHISPER_DEVICE,
                 compute_type=WHISPER_COMPUTE_TYPE,
                 device_index=WHISPER_GPU_IDS,
-                batch_size=WHISPER_BATCH_SIZE
+                batch_size=WHISPER_BATCH_SIZE,
+                language=WHISPER_LANGUAGE
             )
         else:
             raise Error("not support speech recognizer type")

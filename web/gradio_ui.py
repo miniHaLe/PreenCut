@@ -366,9 +366,9 @@ def create_gradio_interface():
                 with gr.Accordion("Advanced Settings", open=False):
                     llm_model = gr.Dropdown(
                         choices=[model['label'] for model in LLM_MODEL_OPTIONS],
-                        value="Bean buns", label="Large Language Model")
+                        value="Qwen3 8B", label="Large Language Model")
                     model_size = gr.Dropdown(
-                        choices=["large-v2", "large-v3", "large", "medium",
+                        choices=["large-v3", "large-v2", "large", "medium",
                                  "small", "base", "tiny"],
                         value=WHISPER_MODEL_SIZE,
                         label="Speech recognition model size"
@@ -403,7 +403,7 @@ def create_gradio_interface():
                     )
                     reanalyze_llm_model = gr.Dropdown(
                         choices=[model['label'] for model in LLM_MODEL_OPTIONS],
-                        value="Bean buns", label="Large Language Model")
+                        value= "Qwen3 8B", label="Large Language Model")
                     reanalyze_btn = gr.Button("Reanalysis", variant="secondary")
 
                 with gr.Tab("Clipping options"):
@@ -419,7 +419,7 @@ def create_gradio_interface():
                     segment_selection.select(select_clip,
                                              inputs=segment_selection,
                                              outputs=segment_selection)
-                    # 添加下载模式选择
+                    # Add download mode selection
                     download_mode = gr.Radio(
                         choices=["Package into zip file", "Merge into one file"],
                         label="How to handle when multiple files are selected",

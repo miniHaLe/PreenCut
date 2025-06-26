@@ -66,7 +66,7 @@ class ProcessingQueue:
 
                 for i, file_path in enumerate(files):
                     self.results[task_id][
-                        "status_info"] = f"共{len(files)}个文件，正在处理第{i + 1}个文件"
+                        "status_info"] = f"There is a total of {len(files)} files, currently processing the {i + 1}th file"
                     # Extract audio (if video)
                     if file_path.lower().endswith(
                             ('.mp4', '.avi', '.mov', '.mkv', '.ts', '.mxf')):

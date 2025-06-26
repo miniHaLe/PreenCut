@@ -19,6 +19,7 @@ class WhisperXSpeechRecognizer(SpeechRecognizer):
             device_index=device_index,
             compute_type=compute_type,
             batch_size=batch_size,
+            language=language
         )
         print(f"Loading the Whisper model: {self.model_size}")
         print(f"device = {self.device}")
@@ -32,14 +33,16 @@ class WhisperXSpeechRecognizer(SpeechRecognizer):
                 self.device,
                 device_index=self.device_index,
                 compute_type=self.compute_type,
-                asr_options=asr_options
+                asr_options=asr_options,
+                language = self.language
             )
         else:
             self.model = whisperx.load_model(
                 self.model_size,
                 self.device,
                 compute_type=self.compute_type,
-                asr_options=asr_options
+                asr_options=asr_options,
+                language = self.language
             )
 
     def transcribe(self, audio_path):

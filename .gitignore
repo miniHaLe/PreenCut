@@ -7,7 +7,7 @@ node_modules
 
 # Generated files
 .psci
-output
+output/*
 
 ### Example user template template
 ### Example user template
@@ -183,5 +183,6 @@ cython_debug/
 
 .vscode
 .gradio
-temp
+temp/*
+data/*
 

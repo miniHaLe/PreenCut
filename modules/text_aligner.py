@@ -10,7 +10,7 @@ class TextAligner:
     """Text aligner class, used to align text with audio and generate SRT subtitles"""
 
     def __init__(self, language_code: Optional[str] = None):
-        self.language_code = language_code or 'zh'  # 默认语言代码为中文
+        self.language_code = language_code or 'vi'  # The default language code is Vietnamese
         self.model = self._load_model()
 
     def _load_model(self):
@@ -31,7 +31,7 @@ class TextAligner:
     def align(self, segments: str, audio_path: str) -> str:
         """Align text with audio and generate SRT subtitles"""
         if ALIGNMENT_MODEL == 'whisperx':
-            # 使用WhisperX进行对齐
+            # Alignment with WhisperX
             import whisperx
             audio = whisperx.load_audio(audio_path)
             align_model, align_model_metadata = self.model
