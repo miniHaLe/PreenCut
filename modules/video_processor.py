@@ -3,6 +3,7 @@ import subprocess
 from config import TEMP_FOLDER
 from typing import List, Dict
 from utils import generate_safe_filename
+import ffmpeg
 
 
 class VideoProcessor:
@@ -54,3 +55,32 @@ class VideoProcessor:
             clip_list.append(clip_path)
 
         return clip_list
+
+    @staticmethod
+    def extract_thumbnail(video_path: str, timestamp: float, output_path: str) -> str:
+        """Extract a thumbnail from a video at the specified timestamp"""
+        # Ensure the output directory exists
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        
+        try:
+            # Use subprocess with ffmpeg for more reliable thumbnail extraction
+            cmd = [
+                'ffmpeg',
+                '-ss', str(timestamp),
+                '-i', video_path,
+                '-vframes', '1',
+                '-q:v', '2',
+                '-y',  # Overwrite output file
+                output_path
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode == 0 and os.path.exists(output_path):
+                return output_path
+            else:
+                print(f"Error extracting thumbnail with ffmpeg: {result.stderr}")
+                return ""
+                
+        except Exception as e:
+            print(f"Error extracting thumbnail: {str(e)}")
+            return ""

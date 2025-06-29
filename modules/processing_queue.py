@@ -36,7 +36,9 @@ class ProcessingQueue:
                 "prompt": prompt,
                 "model_size": whixper_model_size,
                 "llm_model": llm_model,
-                "timestamp": time.time()  # Record task adding time
+                "timestamp": time.time(),  # Record task adding time
+                "progress": 0.0,  # Initialize progress at 0%
+                "progress_desc": "Đang chờ xử lý"  # Progress description
             }
         self.queue.put(task_id)
 
@@ -51,6 +53,8 @@ class ProcessingQueue:
             try:
                 with self.lock:
                     self.results[task_id]["status"] = "processing"
+                    self.results[task_id]["progress"] = 0.01
+                    self.results[task_id]["progress_desc"] = "Bắt đầu xử lý"
 
                 # Get task data
                 with self.lock:
@@ -64,12 +68,23 @@ class ProcessingQueue:
                     SPEECH_RECOGNIZER_TYPE, model_size)
                 llm = LLMProcessor(self.results[task_id].get("llm_model"))
 
+                total_files = len(files)
                 for i, file_path in enumerate(files):
-                    self.results[task_id][
-                        "status_info"] = f"There is a total of {len(files)} files, currently processing the {i + 1}th file"
+                    # Update progress for this file
+                    file_progress_base = i / total_files
+                    file_progress_weight = 1 / total_files
+                    
+                    with self.lock:
+                        self.results[task_id]["status_info"] = f"Đang xử lý tệp {i + 1}/{total_files}"
+                        self.results[task_id]["progress"] = file_progress_base
+                        self.results[task_id]["progress_desc"] = f"Đang xử lý tệp {i + 1}/{total_files}"
+                    
                     # Extract audio (if video)
                     if file_path.lower().endswith(
                             ('.mp4', '.avi', '.mov', '.mkv', '.ts', '.mxf')):
+                        with self.lock:
+                            self.results[task_id]["progress"] = file_progress_base + file_progress_weight * 0.1
+                            self.results[task_id]["progress_desc"] = f"Đang trích xuất âm thanh từ tệp {i + 1}/{total_files}"
                         audio_path = VideoProcessor.extract_audio(file_path,
                                                                   task_id)
                     else:
@@ -77,6 +92,9 @@ class ProcessingQueue:
 
                     # Speech Recognition
                     print(f"Start speech recognition: {file_path}")
+                    with self.lock:
+                        self.results[task_id]["progress"] = file_progress_base + file_progress_weight * 0.2
+                        self.results[task_id]["progress_desc"] = f"Đang nhận dạng giọng nói từ tệp {i + 1}/{total_files}"
                     result = recognizer.transcribe(audio_path)
                     print(
                         f"Speech recognition completed, number of segments: {len(result['segments'])}")
@@ -84,6 +102,9 @@ class ProcessingQueue:
                     if ENABLE_ALIGNMENT:
                         # Text Alignment
                         print("Start text alignment...")
+                        with self.lock:
+                            self.results[task_id]["progress"] = file_progress_base + file_progress_weight * 0.6
+                            self.results[task_id]["progress_desc"] = f"Đang căn chỉnh văn bản từ tệp {i + 1}/{total_files}"
                         aligner = TextAligner(result['language'])
                         result = aligner.align(result["segments"], audio_path)
                         print(
@@ -91,6 +112,9 @@ class ProcessingQueue:
 
                     # Calling large model for segmentation
                     print("Calling large model for segmentation...")
+                    with self.lock:
+                        self.results[task_id]["progress"] = file_progress_base + file_progress_weight * 0.8
+                        self.results[task_id]["progress_desc"] = f"Đang phân đoạn và tóm tắt tệp {i + 1}/{total_files}"
                     segments = llm.segment_video(result["segments"], prompt)
                     print(f"The large model is divided into sections: {len(segments)}")
 
@@ -101,11 +125,18 @@ class ProcessingQueue:
                         "segments": segments,
                         "filepath": file_path
                     })
+                    
+                    # Update completion of this file
+                    with self.lock:
+                        self.results[task_id]["progress"] = file_progress_base + file_progress_weight
+                        self.results[task_id]["progress_desc"] = f"Đã hoàn thành tệp {i + 1}/{total_files}"
 
                 # Update results
                 with self.lock:
                     self.results[task_id]["status"] = "completed"
                     self.results[task_id]["result"] = file_results
+                    self.results[task_id]["progress"] = 1.0
+                    self.results[task_id]["progress_desc"] = "Xử lý hoàn tất"
 
             except Exception as e:
                 import traceback
@@ -115,6 +146,8 @@ class ProcessingQueue:
                 with self.lock:
                     self.results[task_id]["status"] = "error"
                     self.results[task_id]["error"] = str(e)
+                    self.results[task_id]["progress"] = 0.0
+                    self.results[task_id]["progress_desc"] = f"Lỗi: {str(e)}"
             finally:
                 self.queue.task_done()
 

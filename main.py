@@ -2,6 +2,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import gradio as gr
 import uvicorn
+import signal
+import sys
+import os
+import shutil
+import atexit
 
 import config
 from web.gradio_ui import create_gradio_interface
@@ -64,6 +69,40 @@ print(f"  Batch size: {config.WHISPER_BATCH_SIZE}")
 gradio_app = create_gradio_interface()
 app = gr.mount_gradio_app(app, gradio_app, path="/web")
 
+def cleanup_directories():
+    """Clean up temporary and output directories"""
+    try:
+        if os.path.exists(config.TEMP_FOLDER):
+            shutil.rmtree(config.TEMP_FOLDER)
+            print(f"✅ Cleaned up {config.TEMP_FOLDER}")
+        if os.path.exists(config.OUTPUT_FOLDER):
+            shutil.rmtree(config.OUTPUT_FOLDER)
+            print(f"✅ Cleaned up {config.OUTPUT_FOLDER}")
+    except Exception as e:
+        print(f"⚠️ Error during cleanup: {e}")
+
+def signal_handler(signum, frame):
+    """Handle termination signals"""
+    print("\n🛑 Received termination signal, cleaning up...")
+    cleanup_directories()
+    sys.exit(0)
+
 if __name__ == "__main__":
-    # Start the application
-    uvicorn.run(app, host="localhost", port=8860)
+    # Register cleanup function to run on normal exit
+    atexit.register(cleanup_directories)
+    
+    # Register signal handlers for Ctrl+C and other termination signals
+    signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
+    signal.signal(signal.SIGTERM, signal_handler)  # Termination signal
+    
+    try:
+        # Start the application
+        port = int(os.environ.get("PORT", 8860))
+        uvicorn.run(app, host="0.0.0.0", port=port)
+    except KeyboardInterrupt:
+        print("\n🛑 Application interrupted by user")
+        cleanup_directories()
+    except Exception as e:
+        print(f"❌ Application error: {e}")
+        cleanup_directories()
+        raise

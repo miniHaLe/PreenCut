@@ -29,7 +29,9 @@ def get_device_config():
 
     # If not specified but a GPU is detected
     if gpus:
-        return 'cuda', gpus
+        # Restrict to only GPUs 0, 1, and 2 (exclude GPU 3)
+        restricted_gpus = [gpu for gpu in gpus if gpu < 1]
+        return 'cuda', restricted_gpus
 
     # Default use of CPU
     return 'cpu', []
@@ -62,7 +64,7 @@ WHISPER_BATCH_SIZE = 16  # Batch size
 WHISPER_LANGUAGE = 'vi'  # Vietnamese language code
 WHISPER_AUTO_DETECT_LANGUAGE = False  # Disable automatic language detection
 
-FASTER_WHISPER_BEAM_SIZE = 5
+FASTER_WHISPER_BEAM_SIZE = 10
 
 # Speech-to-text alignment model
 ENABLE_ALIGNMENT = True  # Whether to enable alignment
@@ -71,60 +73,20 @@ ALIGNMENT_MODEL = 'whisperx'  # Alignment model used
 # Ollama LLM Configuration
 LLM_MODEL_OPTIONS = [
     {
-        "model": "qwen3:8b-q8_0",
+        "model": "llama3.1:latest",
         "base_url": "http://localhost:11434",
-        "label": "Qwen3 8B",
+        "label": "llama3.1",
         "max_tokens": 4096,
-        "temperature": 0.3,
-    },
-    {
-        "model": "hf.co/unsloth/gemma-3-27b-it-qat-GGUF:Q8_K_XL",
-        "base_url": "http://localhost:11434",
-        "label": "Gemma3 27B",
-        "max_tokens": 4096,
-        "temperature": 0.3,
+        "temperature": 0.6,
+        "supports_structured_output": True,
     }
 ]
-
-# Alternative configuration for mixed OpenAI API + Ollama setup
-# Uncomment and modify if you want to keep some OpenAI API models alongside Ollama
-"""
-LLM_MODEL_OPTIONS = [
-    # Ollama models (local)
-    {
-        "model": "llama3.1:8b",
-        "base_url": "http://localhost:11434",
-        "label": "Llama 3.1 8B (Ollama)",
-        "max_tokens": 4096,
-        "temperature": 0.3,
-        "type": "ollama"
-    },
-    {
-        "model": "qwen2.5:7b",
-        "base_url": "http://localhost:11434",
-        "label": "Qwen 2.5 7B (Ollama)",
-        "max_tokens": 4096,
-        "temperature": 0.3,
-        "type": "ollama"
-    },
-    # OpenAI API compatible models
-    {
-        "model": "deepseek-v3-0324",
-        "base_url": "https://api.lkeap.cloud.tencent.com/v1",
-        "api_key_env_name": "sk-b1aa3a0cffd44265bbc89334a8b79a66",
-        "label": "DeepSeek-V3-0324 (API)",
-        "max_tokens": 4096,
-        "temperature": 0.3,
-        "type": "openai"
-    }
-]
-"""
 
 # Ollama configuration
 OLLAMA_DEFAULT_HOST = "localhost"
 OLLAMA_DEFAULT_PORT = 11434
 OLLAMA_TIMEOUT = 120  # seconds
-OLLAMA_KEEP_ALIVE = "5m"  # Keep model loaded for 5 minutes after last request
+OLLAMA_KEEP_ALIVE = "1m"  # Keep model loaded for 5 minutes after last request
 
 # Helper function to get Ollama base URL
 def get_ollama_url(host=OLLAMA_DEFAULT_HOST, port=OLLAMA_DEFAULT_PORT):
