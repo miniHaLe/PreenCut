@@ -1,6 +1,6 @@
 import pytest
 
-from utils import seconds_to_hhmmss, hhmmss_to_seconds
+from utils.time_utils import seconds_to_hhmmss, hhmmss_to_seconds
 
 
 def test_seconds_to_hhmmss_3661():

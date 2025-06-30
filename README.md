@@ -1,253 +1,660 @@
-# 🎬 PreenCut - Công cụ cắt video thông minh với AI
+# 🎬 PreenCut - AI-Powered Video Intelligence Platform
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![Gradio Interface](https://img.shields.io/badge/Web%20UI-Gradio-FF4B4B.svg)](https://gradio.app/)
+[![Production Ready](https://img.shields.io/badge/Production-Ready-green.svg)](#production-deployment)
 
-PreenCut là công cụ biên tập video thông minh tự động phân tích nội dung âm thanh/video bằng công nghệ nhận dạng giọng nói và mô hình ngôn ngữ lớn. Nó giúp bạn nhanh chóng tìm và trích xuất các phân đoạn liên quan từ tệp media bằng truy vấn ngôn ngữ tự nhiên.
+PreenCut is an enterprise-grade AI-powered video intelligence platform that automatically analyzes and extracts meaningful segments from audio/video content using advanced speech recognition and large language models. Transform your media content into viral-ready clips optimized for social media platforms with professional-grade architecture and deployment capabilities.
 
-![Giao diện Gradio](docs/screenshot.png)
+## 🎉 What's New - Enterprise Production Ready!
 
-## ✨ Tính năng chính
+PreenCut has been **completely refactored** for enterprise production use while maintaining all original functionality:
 
-- **🎙️ Nhận dạng giọng nói tự động**: Sử dụng WhisperX cho phiên âm chính xác
-- **🧠 Phân tích bằng AI**: Sử dụng mô hình ngôn ngữ lớn để phân đoạn và tóm tắt nội dung
-- **💬 Truy vấn bằng ngôn ngữ tự nhiên**: Tìm các đoạn video bằng câu lệnh mô tả như "Tìm tất cả các phân đoạn giới thiệu sản phẩm"
-- **✂️ Cắt thông minh**: Chọn và xuất các phân đoạn dưới dạng tệp riêng lẻ hoặc video đã ghép
-- **📚 Xử lý hàng loạt**: Tìm một chủ đề cụ thể trong nhiều tệp
-- **🔄 Phân tích lại**: Thử nghiệm với các gợi ý khác nhau mà không cần xử lý lại âm thanh
-- **🎯 Trích xuất theo chủ đề**: Trích xuất các phân đoạn ngữ cảnh đầy đủ cho các chủ đề cụ thể với dấu thời gian chính xác
-- **📱 Tối ưu hóa Social Media**: Tạo clip viral cho TikTok, Instagram Reels, YouTube Shorts
-- **📊 Scoring thông minh**: Đánh giá relevancy, engagement và viral potential
-- **📥 Download linh hoạt**: Nhiều tùy chọn tải xuống cho từng nền tảng
+### 🏗️ Production Architecture
 
-## 🔍 Tính năng trích xuất theo chủ đề
+- **Clean Service-Oriented Design**: Dependency injection with testable interfaces
+- **Environment-Based Configuration**: Professional `.env` configuration system
+- **Structured JSON Logging**: Production-grade logging with performance metrics
+- **Custom Exception System**: Standardized error handling with clear error codes
+- **Health Monitoring**: Built-in health checks and performance monitoring
+- **Docker Support**: Containerized deployment with Docker Compose
+- **Backwards Compatibility**: Gradual migration path for existing code
 
-Tính năng trích xuất theo chủ đề mới tận dụng khả năng đầu ra có cấu trúc của Ollama để xác định và trích xuất các phân đoạn ngữ cảnh đầy đủ xung quanh các chủ đề cụ thể:
+### 🚀 Enhanced AI Features  
 
-- **Ngữ cảnh đầy đủ**: Khác với phân đoạn cơ bản, trích xuất theo chủ đề tìm toàn bộ ngữ cảnh nơi chủ đề được thảo luận
-- **Dấu thời gian chính xác**: Đảm bảo thời gian bắt đầu/kết thúc chính xác để nắm bắt toàn bộ câu chuyện
-- **Nhiều lần xuất hiện**: Xác định tất cả các trường hợp của một chủ đề trong suốt video, không chỉ lần đề cập đầu tiên
-- **Đánh giá mức độ liên quan**: Đánh giá mức độ liên quan của mỗi phân đoạn với truy vấn của bạn
-- **Đầu ra có cấu trúc**: Sử dụng chức năng schema JSON của Ollama để có kết quả nhất quán, đáng tin cậy
+- **Social Media Optimization**: Platform-specific content for TikTok, Instagram, YouTube Shorts
+- **Viral Content Analysis**: AI-powered viral potential scoring and engagement prediction
+- **Advanced Relevancy Ranking**: 1-10 scoring system for content relevance and quality
+- **Smart Topic Extraction**: Context-aware segment extraction with precise timestamps
+- **Enhanced Summaries**: Detailed 20-80 word descriptions with word count metrics
+- **Hook Generation**: Attention-grabbing opening lines for viral content
 
-### Cách sử dụng tính năng trích xuất theo chủ đề:
+## ✨ Core Features
 
-1. Xử lý (các) tệp video của bạn bằng nút "Bắt đầu xử lý"
-2. Chuyển đến tab "Trích xuất phân đoạn theo chủ đề"
-3. Nhập chủ đề hoặc gợi ý cụ thể (ví dụ: "Tìm tất cả các thảo luận về năng lượng tái tạo")
-4. Chọn mô hình LLM ưa thích của bạn
-5. Nhấp vào "Trích xuất phân đoạn theo chủ đề"
-6. Đi đến tab "Tùy chọn cắt" để chọn và xuất các phân đoạn đã xác định
+### 🧠 AI-Powered Content Analysis
 
-## ⚙️ Cài đặt
+- **Advanced Speech Recognition**: WhisperX and Faster-Whisper integration
+- **Large Language Model Processing**: Multiple LLM support (Ollama, DeepSeek, DouBao)
+- **Natural Language Queries**: Find segments using descriptive commands
+- **Intelligent Segmentation**: AI-driven content analysis and categorization
+- **Batch Processing**: Process multiple files with unified analysis
+- **Re-analysis Capability**: Experiment with different prompts without reprocessing
 
-1. Sao chép kho lưu trữ:
+### 📱 Social Media Optimization
 
-```bash
-git clone https://github.com/roothch/PreenCut.git
-cd PreenCut
+- **Platform-Specific Optimization**:
+
+  - **TikTok**: 15-180s clips with viral hooks and trending focus
+  - **Instagram Reels**: 15-90s clips emphasizing aesthetic appeal
+  - **YouTube Shorts**: 15-60s clips optimized for retention and value
+  - **Universal**: Balanced optimization for all platforms
+
+- **Viral Content Features**:
+
+  - Engagement scoring (1-10 scale)
+  - Viral potential assessment (Low/Medium/High)
+  - Hook text generation (10-15 words)
+  - Platform-specific hashtag suggestions
+  - Content style selection (Educational/Entertainment/Inspirational)
+
+### Advanced Content Discovery
+
+- **Relevancy Ranking**: Intelligent scoring system for content importance
+- **Topic Extraction**: Find all instances of specific topics with context
+- **Smart Segmentation**: Automatic segment extension for complete narratives
+- **Word Count Analytics**: Content density assessment for engagement optimization
+- **Composite Scoring**: Weighted algorithms combining relevance and engagement
+
+### 🔧 Professional Features
+
+- **RESTful API**: Complete API for integration and automation
+- **Health Monitoring**: Built-in health checks and performance metrics
+- **Scalable Architecture**: Service-oriented design for horizontal scaling
+- **Security**: Input validation, file upload security, environment-based secrets
+- **Error Handling**: Comprehensive error handling with user-friendly messages
+- **Performance Optimization**: GPU acceleration and configurable batch processing
+
+## 📁 Project Architecture
+
+```
+PreenCut/
+├── 🏗️ config/                     # Environment-based configuration
+│   ├── settings.py                # Type-safe configuration classes
+│   └── __init__.py                # Legacy compatibility exports
+├── 🔧 core/                       # Core infrastructure
+│   ├── logging.py                 # Structured JSON logging
+│   ├── exceptions.py              # Custom exception hierarchy
+│   ├── dependency_injection.py    # DI container for services
+│   └── __init__.py
+├── 🎯 services/                   # Business logic services
+│   ├── interfaces.py              # Service contracts
+│   ├── video_service.py           # Video processing service
+│   ├── file_service.py            # File management service
+│   ├── llm_service.py             # LLM integration service
+│   ├── speech_recognition_service.py # Speech recognition service
+│   └── __init__.py
+├── 🛠️ utils/                      # Organized utilities
+│   ├── file_utils.py              # File operations
+│   ├── time_utils.py              # Time formatting utilities
+│   ├── media_utils.py             # Media processing utilities
+│   └── __init__.py
+├── 🌐 web/                        # Web interface & API
+│   ├── gradio_ui.py               # Enhanced Gradio web interface
+│   └── api.py                     # RESTful API endpoints
+├── 📦 modules/                    # Processing modules
+│   ├── video_processor.py         # Legacy video processor
+│   ├── video_processor_refactored.py # Refactored video processor
+│   ├── llm_processor.py           # Legacy LLM processor
+│   ├── llm_processor_refactored.py   # Refactored LLM processor
+│   ├── text_aligner.py            # Text alignment with WhisperX
+│   ├── processing_queue.py        # Task queue management
+│   └── speech_recognizers/        # Speech recognition implementations
+├── 🧪 tests/                      # Comprehensive test suite
+│   ├── run_all_tests.py           # Main test runner
+│   ├── test_enhanced_features.py  # Enhanced features tests
+│   ├── test_social_media_download.py # Social media tests
+│   ├── final_validation.py        # Architecture validation
+│   └── ...                        # Additional test files
+├── 📚 docs/                       # Documentation
+│   ├── PRODUCTION_DEPLOYMENT.md   # Production deployment guide
+│   ├── REFACTORING_SUMMARY.md     # Architecture documentation
+│   └── ...                        # Additional documentation
+├── 📊 logs/                       # Application logs
+├── 🗂️ temp/                       # Temporary processing files
+├── 📤 output/                     # Generated output files
+├── .env.example                   # Environment configuration template
+├── main.py                        # Application entry point
+└── requirements.txt               # Python dependencies
 ```
 
-2. Cài đặt các gói phụ thuộc:
+## 🚀 Quick Start
+
+### 1. Environment Setup
 
 ```bash
+# Clone the repository
+git clone https://github.com/roothch/PreenCut.git
+cd PreenCut
+
+# Copy environment template
+cp .env.example .env
+
+# Edit .env with your settings
+nano .env
+```
+
+### 2. Install Dependencies
+
+```bash
+# Create virtual environment (recommended)
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+# or
+venv\Scripts\activate  # Windows
+
+# Install requirements
 pip install -r requirements.txt
 ```
 
-3. Cài đặt FFmpeg (cần thiết cho xử lý video):
+### 3. Install System Dependencies
 
 ```bash
-# ubuntu/Debian
+# Ubuntu/Debian
 sudo apt install ffmpeg
 
 # CentOS/RHEL
 sudo yum install ffmpeg
 
-# macOS (sử dụng Homebrew)
+# macOS (using Homebrew)
 brew install ffmpeg
 
-# Windows: Tải từ https://ffmpeg.org/
+# Windows: Download from https://ffmpeg.org/
 ```
 
-4. Thiết lập khóa API (cho dịch vụ LLM):
-Đầu tiên bạn cần thiết lập dịch vụ llm trong LLM_MODEL_OPTIONS của `config.py`.
-Sau đó thiết lập khóa API của bạn dưới dạng biến môi trường:
+### 4. Configure LLM Services
 
-```bash
-# ví dụ, nếu bạn đang sử dụng DeepSeek và DouBao làm dịch vụ LLM
-export DEEPSEEK_V3_API_KEY=your_deepseek_api_key
-export DOUBAO_1_5_PRO_API_KEY=your_doubao_api_key
+Set up your LLM API keys in the `.env` file:
+
+```env
+# Example for DeepSeek and DouBao
+DEEPSEEK_V3_API_KEY=your_deepseek_api_key
+DOUBAO_1_5_PRO_API_KEY=your_doubao_api_key
+
+# Ollama configuration (if using Ollama)
+OLLAMA_HOST=localhost
+OLLAMA_PORT=11434
 ```
 
-5. Thiết lập thư mục tệp tạm thời
-  thiết lập os.environ['GRADIO_TEMP_DIR'] trong tệp config.py.
-
-## 🚀 Cách sử dụng
-
-1. Khởi động giao diện Gradio:
+### 5. Run Application
 
 ```bash
+# Start the application
 python main.py
+
+# Access the web interface at:
+# http://localhost:8860/web
 ```
 
-2. Truy cập giao diện web tại http://localhost:8860/web
-3. Tải lên tệp video/âm thanh (định dạng hỗ trợ: mp4, avi, mov, mkv, ts, mxf, mp3, wav, flac)
-4. Cấu hình tùy chọn:
+## 🔧 Configuration
 
-  - Chọn mô hình LLM
-  - Chọn kích thước mô hình Whisper (tiny → large-v3)
-  - Thêm gợi ý phân tích tùy chỉnh (Tùy chọn)
+### Environment Variables (`.env`)
 
-5. Nhấp vào "Bắt đầu xử lý" để phân tích nội dung
-6. Xem kết quả trong bảng phân tích:
+```env
+# Application Settings
+APP_ENV=development
+DEBUG=true
+PORT=8860
+HOST=0.0.0.0
 
-  - Dấu thời gian bắt đầu/kết thúc
-  - Thời lượng
-  - Tóm tắt nội dung
-  - Thẻ được tạo bởi AI
+# GPU Configuration
+WHISPER_DEVICE=cuda
+WHISPER_BATCH_SIZE=16
+WHISPER_MODEL_SIZE=large-v3
+WHISPER_GPU_IDS=0,1
 
-7. Sử dụng tab "Trích xuất phân đoạn theo chủ đề" để thử nghiệm với các gợi ý khác nhau
-8. Sử dụng tab "Tùy chọn cắt" để chọn phân đoạn và chọn chế độ xuất:
+# File Processing
+MAX_FILE_SIZE=10737418240  # 10GB
+MAX_FILE_NUMBERS=10
+TEMP_FOLDER=./temp
+OUTPUT_FOLDER=./output
 
-  - Đóng gói thành tệp ZIP
-  - Ghép thành một tệp video
+# Ollama Configuration
+OLLAMA_HOST=localhost
+OLLAMA_PORT=11434
+OLLAMA_TIMEOUT=300
+OLLAMA_KEEP_ALIVE=5m
 
-9. Bạn cũng có thể sử dụng API RESTful với tiền tố đường dẫn /api/xxx
+# Logging
+LOG_LEVEL=INFO
+LOG_FORMAT=json
+LOG_FILE=logs/app.log
 
-    * Tải lên tệp
-
-      > POST /api/upload
-      
-      body: formdata
-
-      | key  | value type ||
-      |------|------------|-|
-      | file | file       |
-
-      phản hồi: json
-      ```
-        { file_path: f'${GRADIO_TEMP_DIR}/files/2025/05/06/uuid.v1().replace('-', '')${file_extension}' }
-      ```
-
-    * Tạo tác vụ
-
-      > POST /api/tasks
-      
-      body: json
-
-      ```json
-      {
-        "file_path": "đặt đường dẫn tệp ở đây phản hồi từ api tải lên, bắt đầu bằng ${GRADIO_TEMP_DIR}",   
-        "llm_model": "DeepSeek-V3-0324",
-        "whisper_model_size": "large-v2",
-        "prompt": "提取重要信息，时间控制在10s"
-      }
-      ```
-
-      phản hồi: 
-      ```json
-        { "task_id": "" }
-      ```
-    * Truy vấn kết quả tác vụ
-    
-      GET /api/tasks/{task_id}
-      
-      phản hồi:
-      ```json
-      {
-        "status": "completed",
-        "files": [
-            "${GRADIO_TEMP_DIR}/files/2025/06/23/608ecc80500e11f0b08a02420134443f.wav"
-        ],
-        "prompt": "提取重要信息，时间控制在10s",
-        "model_size": "large-v2",
-        "llm_model": "DeepSeek-V3-0324",
-        "timestamp": 1750668370.6088192,
-        "status_info": "共1个文件，正在处理第1个文件",
-        "result": [
-            {
-                "filename": "608ecc80500e11f0b08a02420134443f.wav",
-                "align_result": {
-                    "segments": [
-                        {
-                            "text": "有内地媒体报道,嫦娥6号着陆器上升器组合体已经完成了钻取采样,接着正按计划进行月面的表取采样。",
-                            "start": 1.145,
-                            "end": 9.329
-                        }
-                    ],
-                    "language": "zh"
-                },
-                "segments": [
-                    {
-                        "start": 1.145,
-                        "end": 9.329,
-                        "summary": "嫦娥6号着陆器上升器组合体已完成钻取采样，正进行月面表取采样。",
-                        "tags": [
-                            "嫦娥6号",
-                            "月球采样",
-                            "航天科技"
-                        ]
-                    }
-                ],
-                "filepath": "${GRADIO_TEMP_DIR}/files/2025/06/23/608ecc80500e11f0b08a02420134443f.wav"
-            }
-        ],
-        "last_accessed": 1750668836.8038888
-      }
-      ```
-
-## � Cấu trúc dự án
-
-```
-PreenCut/
-├── 📚 docs/                    # Tài liệu kỹ thuật
-│   ├── README.md
-│   ├── SOCIAL_MEDIA_DOWNLOAD.md
-│   └── ...
-├── 🧪 tests/                   # Test files
-│   ├── run_all_tests.py
-│   ├── test_enhanced_features.py
-│   └── ...
-├── 🔧 modules/                 # Core modules
-│   ├── llm_processor.py
-│   ├── video_processor.py
-│   └── ...
-├── 🌐 web/                     # Web interface
-│   └── gradio_ui.py
-├── ⚙️ config.py               # Configuration
-├── 🚀 main.py                 # Main application
-└── 📋 requirements.txt        # Dependencies
+# API Keys
+DEEPSEEK_V3_API_KEY=your_api_key_here
+DOUBAO_1_5_PRO_API_KEY=your_api_key_here
 ```
 
-## 🧪 Testing
+### Legacy Configuration Support
 
-Chạy tất cả tests:
+Existing code continues to work with deprecation warnings:
+
+```python
+# Legacy (still works with warnings)
+from config import TEMP_FOLDER, WHISPER_MODEL_SIZE
+
+# New recommended approach
+from config import get_config
+config = get_config()
+temp_folder = config.file.temp_folder
+```
+
+## 📖 Usage Guide
+
+### Web Interface
+
+1. **Start Application**: Run `python main.py`
+2. **Open Browser**: Navigate to `http://localhost:8860/web`
+3. **Upload Files**: Support for mp4, avi, mov, mkv, ts, mxf, mp3, wav, flac
+4. **Configure Options**:
+   - Select LLM model and Whisper model size
+   - Add custom analysis prompts (optional)
+   - Configure GPU settings if available
+5. **Process Content**: Click "Bắt đầu xử lý" to analyze content
+6. **Review Results**: View enhanced results with:
+   - Detailed summaries (20-80 words)
+   - Word count metrics
+   - Relevancy scores (1-10 scale)
+   - Viral potential indicators
+
+### Enhanced Features
+
+#### 1. Topic Extraction with Relevancy Ranking
+1. Complete basic analysis first
+2. Go to "Trích xuất phân đoạn theo chủ đề" tab
+3. Enter specific topic or keyword
+4. Select LLM model for analysis
+5. Click "Trích xuất phân đoạn theo chủ đề"
+6. View ranked results sorted by relevance score
+
+#### 2. Social Media Optimization
+1. Complete basic analysis first
+2. Go to "Tối ưu hóa cho mạng xã hội" tab
+3. **Select Platform**: TikTok/Instagram Reels/YouTube Shorts/Universal
+4. **Enter Topic**: Trending topic or content theme
+5. **Choose Style**: Educational/Entertainment/Inspirational/Tutorial/Trending
+6. **Set Clip Count**: Maximum number of clips (3-10)
+7. **Generate Content**: Click "🎯 Tạo nội dung viral"
+8. **Review Results**: View platform-optimized content with:
+   - Hook text for attention-grabbing openings
+   - Platform-specific hashtags
+   - Viral potential scoring
+   - Engagement metrics
+9. **Export**: Use "Cutting Options" tab to export as ZIP or merged video
+
+#### 3. Advanced Content Analysis Features
+- **Enhanced Summaries**: Detailed content descriptions with context
+- **Word Count Analytics**: Content density for engagement optimization
+- **Composite Scoring**: Relevance × 0.6 + Engagement × 0.4
+- **Smart Segment Extension**: Automatic extension for complete narratives
+- **Fallback Mechanisms**: Keyword matching when LLM analysis fails
+
+### RESTful API
+
+#### Upload File
 ```bash
+POST /api/upload
+Content-Type: multipart/form-data
+
+# Response
+{
+  "file_path": "/path/to/uploaded/file.mp4"
+}
+```
+
+#### Create Processing Task
+```bash
+POST /api/tasks
+Content-Type: application/json
+
+{
+  "file_path": "/path/to/uploaded/file.mp4",
+  "llm_model": "DeepSeek-V3-0324",
+  "whisper_model_size": "large-v2",
+  "prompt": "Extract viral content segments for TikTok"
+}
+
+# Response
+{
+  "task_id": "unique_task_id"
+}
+```
+
+#### Query Task Results
+```bash
+GET /api/tasks/{task_id}
+
+# Response
+{
+  "status": "completed",
+  "files": ["/path/to/processed/file.wav"],
+  "result": [
+    {
+      "filename": "file.wav",
+      "segments": [
+        {
+          "start": 1.145,
+          "end": 9.329,
+          "summary": "Detailed content summary with context",
+          "tags": ["tag1", "tag2"],
+          "word_count": 45,
+          "relevance_score": 8.5,
+          "engagement_score": 7.2,
+          "viral_potential": "High"
+        }
+      ]
+    }
+  ]
+}
+```
+
+## 🏭 Production Deployment
+
+### Docker Deployment (Recommended)
+
+```bash
+# Quick start with Docker Compose
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Scale services for high availability
+docker-compose up -d --scale app=3
+```
+
+### Manual Production Setup
+
+1. **Server Requirements**:
+   - Ubuntu 20.04+ or similar Linux distribution
+   - Python 3.8+, FFmpeg, CUDA drivers (for GPU acceleration)
+   - Minimum 8GB RAM (16GB+ recommended)
+   - 50GB+ disk space for temporary files
+
+2. **Production Configuration**:
+```env
+# Production .env settings
+APP_ENV=production
+DEBUG=false
+PORT=8860
+HOST=0.0.0.0
+
+# Security
+CORS_ORIGINS=https://yourdomain.com
+RATE_LIMIT_ENABLED=true
+RATE_LIMIT_PER_MINUTE=30
+
+# Performance
+WHISPER_BATCH_SIZE=32
+WORKER_PROCESSES=4
+ENABLE_CACHING=true
+
+# Logging
+LOG_LEVEL=INFO
+LOG_FORMAT=json
+LOG_FILE=/var/log/preencut/app.log
+```
+
+3. **System Service Setup**:
+```bash
+# Create system user
+sudo useradd -r -s /bin/false preencut
+sudo mkdir -p /var/lib/preencut/{temp,output}
+sudo mkdir -p /var/log/preencut
+sudo chown -R preencut:preencut /var/lib/preencut /var/log/preencut
+
+# Configure systemd service
+sudo systemctl enable preencut
+sudo systemctl start preencut
+```
+
+### Health Monitoring
+
+```bash
+# Health check endpoint
+curl http://localhost:8860/health
+
+# View structured logs
+tail -f /var/log/preencut/app.log | jq .
+
+# Monitor GPU usage
+nvidia-smi
+watch -n 1 nvidia-smi
+```
+
+## ⚡ Performance Optimization
+
+### GPU Configuration
+
+```env
+# High-end GPUs (RTX 4090, A100)
+WHISPER_BATCH_SIZE=32
+WHISPER_MODEL_SIZE=large-v3
+WHISPER_COMPUTE_TYPE=float16
+
+# Mid-range GPUs (RTX 3070, 4070)  
+WHISPER_BATCH_SIZE=16
+WHISPER_MODEL_SIZE=large-v2
+WHISPER_COMPUTE_TYPE=float16
+
+# CPU-only systems
+WHISPER_DEVICE=cpu
+WHISPER_BATCH_SIZE=4
+WHISPER_MODEL_SIZE=base
+```
+
+### Performance Tips
+
+- **Use WhisperX** for faster processing on longer content
+- **Use Faster-Whisper** for shorter segments with better accuracy
+- **Adjust batch sizes** based on available VRAM
+- **Enable SSD storage** for temp files when processing large videos
+- **Configure worker processes** based on CPU cores for API endpoints
+- **Enable caching** for repeated analysis of similar content
+
+## 🧪 Testing & Validation
+
+### Run All Tests
+
+```bash
+# Comprehensive architecture validation
+python tests/final_validation.py
+
+# Service integration tests
+python tests/test_service_integration.py
+
+# Enhanced features tests
+python tests/test_enhanced_features.py
+
+# Social media optimization tests
+python tests/test_social_media_download.py
+
+# Run complete test suite
 python tests/run_all_tests.py
 ```
 
-Chạy test riêng lẻ:
-```bash
-python tests/test_enhanced_features.py
-python tests/test_social_media_download.py
+### Test Coverage
+
+- ✅ Configuration system validation
+- ✅ Logging and monitoring systems
+- ✅ Service layer and dependency injection
+- ✅ Enhanced AI features and social media optimization
+- ✅ File handling and error management
+- ✅ API endpoints and integration
+- ✅ Performance and scalability
+
+## 🔄 Migration from Legacy Code
+
+### Gradual Migration Strategy
+
+The refactoring maintains backwards compatibility while providing a clear migration path:
+
+**Phase 1**: Update configuration (immediate)
+```python
+# Replace direct config imports
+from config import get_config
+config = get_config()
 ```
 
-## �💻 Phát triển
-```bash
-python3 -m uvicorn main:app --port 8860 --reload
+**Phase 2**: Adopt new utilities (short-term)
+```python
+# Use organized utility modules
+from utils.file_utils import generate_safe_filename
+from utils.time_utils import seconds_to_hhmmss
 ```
 
-## ⚡ Mẹo cải thiện hiệu suất
+**Phase 3**: Service architecture (long-term)
+```python
+# Use dependency injection for services
+from core.dependency_injection import get_container
+container = get_container()
+video_service = container.get_video_service()
+```
 
-  - Sử dụng WhisperX để xử lý nhanh hơn, sử dụng faster-whisper cho các phân đoạn ngắn hơn
-  - Điều chỉnh WHISPER_BATCH_SIZE dựa trên VRAM có sẵn
-  - Sử dụng kích thước mô hình nhỏ hơn cho hệ thống chỉ có CPU
+## 🛡️ Security & Production Considerations
 
-## 📜 Giấy phép
-Dự án này được cấp phép theo Giấy phép MIT. Xem tệp [LICENSE](LICENSE) để biết chi tiết.
+### Security Features
+- **Environment-based secrets**: All API keys and sensitive data in environment variables
+- **File upload validation**: Strict file type, size, and content validation
+- **Input sanitization**: Comprehensive input validation and sanitization
+- **CORS configuration**: Configurable cross-origin request handling
+- **Rate limiting**: Built-in protection against abuse and DoS attacks
+- **Error sanitization**: Prevent information leakage in error messages
 
-## ⭐ Lịch sử Star
+### Best Practices
+```env
+# Production security settings
+APP_ENV=production
+DEBUG=false
+ALLOWED_ORIGINS=["https://yourdomain.com"]
+MAX_FILE_SIZE=5368709120  # 5GB for production
+ENABLE_RATE_LIMITING=true
+LOG_LEVEL=INFO  # Avoid DEBUG in production
+```
 
-[![Biểu đồ lịch sử Star](https://api.star-history.com/svg?repos=roothch/preencut&type=Date)](https://www.star-history.com/#roothch/preencut&Date)
+## 🔮 Future Roadmap
 
+### Planned Enhancements
+1. **Database Integration**: PostgreSQL/MySQL for persistent task storage and analytics
+2. **Message Queue**: Redis/RabbitMQ for horizontal scaling and background processing
+3. **Advanced Analytics**: User behavior tracking, content performance metrics
+4. **API Versioning**: RESTful API with proper versioning and documentation
+5. **Microservices**: Split into smaller, focused services for cloud deployment
+6. **Kubernetes Support**: Container orchestration for enterprise deployment
+7. **Real-time Processing**: WebSocket support for live video analysis
+8. **Advanced AI Models**: Integration with latest multimodal AI models
+
+### Community Contributions
+- Model optimization and fine-tuning for specific use cases
+- Additional language support for international content
+- New export formats and platform integrations
+- Performance benchmarking and optimization
+- Enhanced UI/UX improvements
+
+## 🤝 Contributing
+
+### Development Setup
+```bash
+# Fork and clone the repository
+git clone https://github.com/yourusername/PreenCut.git
+cd PreenCut
+
+# Create development environment
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+# Create feature branch
+git checkout -b feature/your-feature-name
+```
+
+### Code Quality Standards
+- **Type Hints**: All new code must include comprehensive type annotations
+- **Error Handling**: Robust exception handling with custom error types
+- **Logging**: Structured logging for all operations and business events
+- **Testing**: Unit tests and integration tests for new functionality
+- **Documentation**: Update documentation for new features and changes
+
+### Development Workflow
+1. Create feature branch from main
+2. Implement changes with comprehensive tests
+3. Ensure type safety and code quality
+4. Update documentation and examples
+5. Submit pull request with detailed description
+
+## 📞 Support & Troubleshooting
+
+### Getting Help
+- **Documentation**: Check comprehensive documentation first
+- **Error Messages**: Review error suggestions and context information
+- **Logs**: Check `logs/app.log` for detailed structured information
+- **GitHub Issues**: Create issues for bugs or feature requests
+
+### Common Issues & Solutions
+
+#### Performance Issues
+- **GPU Memory**: Reduce `WHISPER_BATCH_SIZE` if getting CUDA out of memory
+- **CPU Usage**: Adjust `WORKER_PROCESSES` based on system capabilities
+- **Disk Space**: Ensure adequate space in `TEMP_FOLDER` for large files
+- **Network**: Check Ollama connectivity and API key validity
+
+#### File Upload Issues
+- **File Size**: Check `MAX_FILE_SIZE` configuration
+- **File Format**: Ensure file format is in supported list
+- **Permissions**: Verify write permissions to temp and output folders
+
+#### API Integration Issues
+- **Authentication**: Verify API keys are correctly set in environment
+- **Network**: Check firewall settings and network connectivity
+- **Rate Limits**: Monitor API usage and adjust rate limiting if needed
+
+### Performance Monitoring
+```bash
+# Monitor system resources
+htop
+iotop
+nvidia-smi
+
+# Check application logs
+tail -f logs/app.log | grep "ERROR"
+grep "Performance:" logs/app.log | jq .
+
+# Test API endpoints
+curl -X GET http://localhost:8860/health
+curl -X POST http://localhost:8860/api/upload -F "file=@test.mp4"
+```
+
+## 📜 License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+---
+
+## 🎉 Production Ready!
+
+PreenCut is now enterprise-ready with:
+- ✅ **Clean Architecture**: Service-oriented design with dependency injection
+- ✅ **Professional Logging**: Structured JSON logs with performance metrics  
+- ✅ **Environment Configuration**: Production-ready configuration system
+- ✅ **Docker Support**: Containerized deployment with health checks
+- ✅ **Enhanced AI Features**: Social media optimization and viral content analysis
+- ✅ **Comprehensive Documentation**: Complete setup and migration guides
+- ✅ **Backwards Compatibility**: Gradual migration path for existing code
+- ✅ **Type Safety**: Full type hints throughout the codebase
+- ✅ **Error Handling**: Custom exceptions with clear error messages
+- ✅ **Testing Support**: Comprehensive test suite and validation
+- ✅ **Security**: Production-grade security features and best practices
+
+The application maintains all original AI-powered video processing capabilities while providing enterprise-grade reliability, maintainability, scalability, and cutting-edge social media optimization features.
+
+**Ready for production deployment and viral content creation! 🚀**

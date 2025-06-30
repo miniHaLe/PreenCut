@@ -1,108 +1,212 @@
-from fastapi import FastAPI
+"""
+PreenCut - AI-powered video/audio analysis and segmentation tool.
+Main application entry point with proper configuration and error handling.
+"""
+
+import sys
+import signal
+import atexit
+from pathlib import Path
+
+# Add project root to Python path
+sys.path.insert(0, str(Path(__file__).parent))
+
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import gradio as gr
 import uvicorn
-import signal
-import sys
-import os
-import shutil
-import atexit
 
-import config
+from config import get_config, validate_config
+from core.logging import get_logger, log_business_event
+from core.exceptions import handle_exceptions, ErrorHandler
+from core.dependency_injection import configure_services
 from web.gradio_ui import create_gradio_interface
 from web.api import router as api_router
 
 
-import logging
-
-# Block access logs
-block_endpoints = "./"
-
-
-class LogFilter(logging.Filter):
-    def filter(self, record):
-        if record.args and len(record.args) >= 3:
-            if str(record.args[2]).startswith(block_endpoints):
-                return False
-        return True
+# Configure logging and services
+logger = get_logger(__name__)
+config = get_config()
+configure_services()
 
 
-uvicorn_logger = logging.getLogger("uvicorn.access")
-uvicorn_logger.addFilter(LogFilter())
+class Application:
+    """Main application class."""
+    
+    def __init__(self):
+        """Initialize the application."""
+        self.app = None
+        self.setup_complete = False
+        
+    @handle_exceptions('main')
+    def setup(self):
+        """Setup the application."""
+        logger.info("Starting PreenCut application setup")
+        
+        # Validate configuration
+        config_errors = validate_config()
+        if config_errors:
+            logger.error(f"Configuration errors: {', '.join(config_errors)}")
+            for error in config_errors:
+                logger.error(f"Config error: {error}")
+            raise RuntimeError(f"Configuration validation failed: {config_errors}")
+        
+        # Log configuration
+        self._log_configuration()
+        
+        # Check hardware availability
+        self._check_hardware()
+        
+        # Create FastAPI app
+        self.app = self._create_fastapi_app()
+        
+        # Mount Gradio interface
+        self._mount_gradio_interface()
+        
+        # Setup cleanup handlers
+        self._setup_cleanup_handlers()
+        
+        self.setup_complete = True
+        logger.info("PreenCut application setup completed successfully")
+        log_business_event('application_startup', config=config.name)
+    
+    def _log_configuration(self):
+        """Log current configuration."""
+        logger.info("Current Configuration:")
+        logger.info(f"  Environment: {config.environment.value}")
+        logger.info(f"  Debug mode: {config.debug}")
+        logger.info(f"  Speech recognition module: {config.model.speech_recognizer_type}")
+        logger.info(f"  Model size: {config.model.whisper_model_size}")
+        logger.info(f"  Device: {config.gpu.whisper_device}")
+        logger.info(f"  Compute type: {config.gpu.whisper_compute_type}")
+        logger.info(f"  GPU IDs: {config.gpu.whisper_gpu_ids}")
+        logger.info(f"  Batch size: {config.gpu.whisper_batch_size}")
+        logger.info(f"  Ollama URL: {config.ollama.base_url}")
+    
+    def _check_hardware(self):
+        """Check hardware availability."""
+        try:
+            import torch
+            if torch.cuda.is_available():
+                gpu_count = torch.cuda.device_count()
+                logger.info(f"✅ GPU acceleration available - {gpu_count} GPU(s) detected")
+                for i in range(gpu_count):
+                    gpu_name = torch.cuda.get_device_name(i)
+                    logger.info(f"  GPU {i}: {gpu_name}")
+            else:
+                logger.warning("⚠️ No GPU detected, using CPU processing")
+        except ImportError:
+            logger.warning("⚠️ PyTorch not available, GPU status unknown")
+    
+    def _create_fastapi_app(self) -> FastAPI:
+        """Create and configure FastAPI application."""
+        app = FastAPI(
+            title=config.name,
+            version=config.version,
+            debug=config.debug
+        )
+        
+        # Add CORS middleware
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=config.security.cors_origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+        
+        # Add API routes
+        app.include_router(api_router)
+        
+        # Add health check endpoint
+        @app.get("/health")
+        async def health_check():
+            """Health check endpoint."""
+            return {
+                "status": "healthy",
+                "version": config.version,
+                "environment": config.environment.value
+            }
+        
+        return app
+    
+    def _mount_gradio_interface(self):
+        """Mount Gradio interface to FastAPI app."""
+        try:
+            gradio_app = create_gradio_interface()
+            self.app = gr.mount_gradio_app(self.app, gradio_app, path="/web")
+            logger.info("✅ Gradio interface mounted successfully")
+        except Exception as e:
+            logger.error(f"❌ Failed to create Gradio interface: {str(e)}")
+            raise
+    
+    def _setup_cleanup_handlers(self):
+        """Setup cleanup handlers for graceful shutdown."""
+        def cleanup():
+            """Clean up resources."""
+            self._cleanup_directories()
+            log_business_event('application_shutdown')
+        
+        def signal_handler(signum, frame):
+            """Handle termination signals."""
+            logger.info(f"🛑 Received signal {signum}, shutting down gracefully...")
+            cleanup()
+            sys.exit(0)
+        
+        # Register cleanup function
+        atexit.register(cleanup)
+        
+        # Register signal handlers
+        signal.signal(signal.SIGINT, signal_handler)   # Ctrl+C
+        signal.signal(signal.SIGTERM, signal_handler)  # Termination
+    
+    def _cleanup_directories(self):
+        """Clean up temporary directories."""
+        try:
+            import shutil
+            temp_dir = Path(config.file.temp_folder)
+            output_dir = Path(config.file.output_folder)
+            
+            if temp_dir.exists():
+                shutil.rmtree(temp_dir)
+                logger.info(f"✅ Cleaned up {temp_dir}")
+            
+            if output_dir.exists():
+                shutil.rmtree(output_dir)
+                logger.info(f"✅ Cleaned up {output_dir}")
+                
+        except Exception as e:
+            logger.error(f"⚠️ Error during cleanup: {e}")
+    
+    def run(self):
+        """Run the application."""
+        if not self.setup_complete:
+            self.setup()
+        
+        try:
+            logger.info(f"🚀 Starting PreenCut server at http://{config.host}:{config.port}")
+            logger.info(f"📱 Web interface available at http://{config.host}:{config.port}/web")
+            
+            uvicorn.run(
+                self.app,
+                host=config.host,
+                port=config.port,
+                log_level=config.log_level.value.lower(),
+                access_log=config.debug
+            )
+            
+        except KeyboardInterrupt:
+            logger.info("🛑 Application interrupted by user")
+        except Exception as e:
+            logger.error(f"❌ Application error: {e}")
+            raise
 
 
-app = FastAPI()
+def main():
+    """Main entry point."""
+    app = Application()
+    app.run()
 
-# Cross-domain middleware
-origins = ["*"]
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-# Adding API Routes
-app.include_router(api_router)
-
-# Check GPU availability
-try:
-    import torch
-
-    if torch.cuda.is_available():
-        print("✅ If a GPU is detected to be available, GPU acceleration will be used")
-    else:
-        print("⚠️ No GPU detected, will run using CPU")
-except ImportError:
-    print("⚠️ Unable to import torch, GPU status unknown")
-
-# Print the current configuration
-print("Current Configuration:")
-print(f"  Speech recognition processing module: {config.SPEECH_RECOGNIZER_TYPE}")
-print(f"  Model size: {config.WHISPER_MODEL_SIZE}")
-print(f"  Computing equipment: {config.WHISPER_DEVICE}")
-print(f"  Calculation Type: {config.WHISPER_COMPUTE_TYPE}")
-print(f"  Using GPU: {config.WHISPER_GPU_IDS}")
-print(f"  Batch size: {config.WHISPER_BATCH_SIZE}")
-
-# Creating the Gradio Interface
-gradio_app = create_gradio_interface()
-app = gr.mount_gradio_app(app, gradio_app, path="/web")
-
-def cleanup_directories():
-    """Clean up temporary and output directories"""
-    try:
-        if os.path.exists(config.TEMP_FOLDER):
-            shutil.rmtree(config.TEMP_FOLDER)
-            print(f"✅ Cleaned up {config.TEMP_FOLDER}")
-        if os.path.exists(config.OUTPUT_FOLDER):
-            shutil.rmtree(config.OUTPUT_FOLDER)
-            print(f"✅ Cleaned up {config.OUTPUT_FOLDER}")
-    except Exception as e:
-        print(f"⚠️ Error during cleanup: {e}")
-
-def signal_handler(signum, frame):
-    """Handle termination signals"""
-    print("\n🛑 Received termination signal, cleaning up...")
-    cleanup_directories()
-    sys.exit(0)
 
 if __name__ == "__main__":
-    # Register cleanup function to run on normal exit
-    atexit.register(cleanup_directories)
-    
-    # Register signal handlers for Ctrl+C and other termination signals
-    signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
-    signal.signal(signal.SIGTERM, signal_handler)  # Termination signal
-    
-    try:
-        # Start the application
-        port = int(os.environ.get("PORT", 8860))
-        uvicorn.run(app, host="0.0.0.0", port=port)
-    except KeyboardInterrupt:
-        print("\n🛑 Application interrupted by user")
-        cleanup_directories()
-    except Exception as e:
-        print(f"❌ Application error: {e}")
-        cleanup_directories()
-        raise
+    main()

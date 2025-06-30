@@ -19,8 +19,8 @@ from config import (
 from modules.processing_queue import ProcessingQueue
 from modules.video_processor import VideoProcessor
 from modules.llm_processor import LLMProcessor
-from utils import seconds_to_hhmmss, hhmmss_to_seconds, clear_directory_fast \
-    , generate_safe_filename
+from utils.time_utils import seconds_to_hhmmss, hhmmss_to_seconds
+from utils.file_utils import clear_directory_fast, generate_safe_filename
 from typing import List, Dict, Tuple, Optional, Any, Union
 import subprocess
 
@@ -49,7 +49,7 @@ def check_uploaded_files(files: List) -> str:
             raise gr.Error(f"Kích thước tệp vượt quá giới hạn ({file_size} > {MAX_FILE_SIZE})")
 
         # Check the file format
-        ext = os.path.splitext(filename)[1][1:].lower()
+        ext = os.path.splitext(filename)[1].lower()  # Keep the dot
         if ext not in ALLOWED_EXTENSIONS:
             raise gr.Error(
                 f"Định dạng tệp không được hỗ trợ: {ext}, Chỉ hỗ trợ: {', '.join(ALLOWED_EXTENSIONS)}")

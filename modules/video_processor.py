@@ -2,7 +2,7 @@ import os
 import subprocess
 from config import TEMP_FOLDER
 from typing import List, Dict
-from utils import generate_safe_filename
+from utils.file_utils import generate_safe_filename
 import ffmpeg
 
 

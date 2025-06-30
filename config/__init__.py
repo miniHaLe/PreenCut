@@ -1,0 +1,71 @@
+"""
+Configuration package for PreenCut application.
+"""
+
+from .settings import (
+    get_config,
+    get_llm_model_options,
+    validate_config,
+    ApplicationConfig,
+    Environment,
+    LogLevel,
+    
+    # Legacy compatibility
+    ALLOWED_EXTENSIONS,
+    MAX_FILE_SIZE,
+    MAX_FILE_NUMBERS,
+    TEMP_FOLDER,
+    OUTPUT_FOLDER,
+    SPEECH_RECOGNIZER_TYPE,
+    WHISPER_MODEL_SIZE,
+    WHISPER_DEVICE,
+    WHISPER_GPU_IDS,
+    WHISPER_COMPUTE_TYPE,
+    WHISPER_BATCH_SIZE,
+    WHISPER_LANGUAGE,
+    WHISPER_AUTO_DETECT_LANGUAGE,
+    FASTER_WHISPER_BEAM_SIZE,
+    ENABLE_ALIGNMENT,
+    ALIGNMENT_MODEL,
+    LLM_MODEL_OPTIONS,
+    OLLAMA_DEFAULT_HOST,
+    OLLAMA_DEFAULT_PORT,
+    OLLAMA_TIMEOUT,
+    OLLAMA_KEEP_ALIVE,
+    get_ollama_url,
+    check_ollama_model_availability,
+)
+
+__all__ = [
+    'get_config',
+    'get_llm_model_options', 
+    'validate_config',
+    'ApplicationConfig',
+    'Environment',
+    'LogLevel',
+    
+    # Legacy exports
+    'ALLOWED_EXTENSIONS',
+    'MAX_FILE_SIZE',
+    'MAX_FILE_NUMBERS',
+    'TEMP_FOLDER',
+    'OUTPUT_FOLDER',
+    'SPEECH_RECOGNIZER_TYPE',
+    'WHISPER_MODEL_SIZE',
+    'WHISPER_DEVICE',
+    'WHISPER_GPU_IDS',
+    'WHISPER_COMPUTE_TYPE',
+    'WHISPER_BATCH_SIZE',
+    'WHISPER_LANGUAGE',
+    'WHISPER_AUTO_DETECT_LANGUAGE',
+    'FASTER_WHISPER_BEAM_SIZE',
+    'ENABLE_ALIGNMENT',
+    'ALIGNMENT_MODEL',
+    'LLM_MODEL_OPTIONS',
+    'OLLAMA_DEFAULT_HOST',
+    'OLLAMA_DEFAULT_PORT',
+    'OLLAMA_TIMEOUT',
+    'OLLAMA_KEEP_ALIVE',
+    'get_ollama_url',
+    'check_ollama_model_availability',
+]
