@@ -2,6 +2,7 @@
 
 import os
 import time
+import gc
 from typing import Dict, List, Optional, Any
 from abc import ABC, abstractmethod
 
@@ -10,6 +11,34 @@ from core.exceptions import SpeechRecognitionError, FileNotFoundError as CustomF
 from services.interfaces import SpeechRecognitionServiceInterface
 from config.settings import get_settings
 from services.whisper_gpu_load_balancer import get_whisper_gpu_load_balancer
+
+
+def cleanup_whisper_gpu_memory():
+    """Simple GPU VRAM cleanup function specifically for Whisper model usage."""
+    logger = get_logger(__name__)
+    try:
+        # Force garbage collection first
+        gc.collect()
+        
+        # Clear GPU cache if PyTorch is available
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                logger.debug("Whisper GPU VRAM cleanup completed", {
+                    "action": "whisper_cleanup",
+                    "methods": ["gc.collect", "torch.cuda.empty_cache"]
+                })
+            else:
+                logger.debug("Whisper cleanup: GPU not available, only gc.collect performed")
+        except ImportError:
+            logger.debug("Whisper cleanup: PyTorch not available, only gc.collect performed")
+            
+    except Exception as e:
+        logger.warning("Whisper GPU VRAM cleanup failed", {
+            "error": str(e),
+            "action": "whisper_cleanup"
+        })
 
 
 class BaseSpeechRecognizer(ABC):
@@ -164,19 +193,23 @@ class SpeechRecognitionService(SpeechRecognitionServiceInterface):
             # Use GPU load balancer if available
             if self._use_gpu_load_balancer and self._gpu_load_balancer:
                 start_time = time.time()
-                result = self._gpu_load_balancer.transcribe_audio(
-                    audio_path, 
-                    language or self.settings.model.whisper_language
-                )
-                processing_time = time.time() - start_time
-                
-                self.logger.info("GPU load balancer transcription completed", {
-                    "audio_path": audio_path,
-                    "processing_time": processing_time,
-                    "gpu_status": self._gpu_load_balancer.get_gpu_status()
-                })
-                
-                return result
+                try:
+                    result = self._gpu_load_balancer.transcribe_audio(
+                        audio_path, 
+                        language or self.settings.model.whisper_language
+                    )
+                    processing_time = time.time() - start_time
+                    
+                    self.logger.info("GPU load balancer transcription completed", {
+                        "audio_path": audio_path,
+                        "processing_time": processing_time,
+                        "gpu_status": self._gpu_load_balancer.get_gpu_status()
+                    })
+                    
+                    return result
+                finally:
+                    # Clean up GPU memory after load balancer transcription
+                    cleanup_whisper_gpu_memory()
             
             # Fallback to single recognizer
             if not self._recognizer:
@@ -196,27 +229,31 @@ class SpeechRecognitionService(SpeechRecognitionServiceInterface):
             
             # Perform transcription
             start_time = time.time()
-            result = self._recognizer.transcribe(audio_path)
-            processing_time = time.time() - start_time
-            
-            # Restore original language
-            if language and language != original_language:
-                self._recognizer.language = original_language
-            
-            # Validate result
-            if not result or not isinstance(result, dict):
-                raise SpeechRecognitionError("Invalid transcription result")
-            
-            # Standardize result format
-            standardized_result = self._standardize_result(result)
-            
-            self.logger.info("Audio transcription completed successfully", {
-                "audio_path": audio_path,
-                "processing_time": processing_time,
-                "segments_count": len(standardized_result.get("segments", []))
-            })
-            
-            return standardized_result
+            try:
+                result = self._recognizer.transcribe(audio_path)
+                processing_time = time.time() - start_time
+                
+                # Restore original language
+                if language and language != original_language:
+                    self._recognizer.language = original_language
+                
+                # Validate result
+                if not result or not isinstance(result, dict):
+                    raise SpeechRecognitionError("Invalid transcription result")
+                
+                # Standardize result format
+                standardized_result = self._standardize_result(result)
+                
+                self.logger.info("Audio transcription completed successfully", {
+                    "audio_path": audio_path,
+                    "processing_time": processing_time,
+                    "segments_count": len(standardized_result.get("segments", []))
+                })
+                
+                return standardized_result
+            finally:
+                # Clean up GPU memory after single recognizer transcription
+                cleanup_whisper_gpu_memory()
             
         except Exception as e:
             self.logger.error("Audio transcription failed", {

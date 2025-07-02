@@ -4,6 +4,7 @@ GPU load balancer for distributing Whisper workload across multiple GPUs.
 
 import threading
 import time
+import gc
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor, Future
@@ -13,6 +14,24 @@ import os
 from core.logging import get_logger
 from core.exceptions import SpeechRecognitionError, ConfigurationError
 from config.settings import get_settings
+
+
+def cleanup_whisper_gpu_memory():
+    """Simple GPU VRAM cleanup function specifically for Whisper model usage."""
+    try:
+        # Force garbage collection first
+        gc.collect()
+        
+        # Clear GPU cache if PyTorch is available
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except ImportError:
+            pass  # PyTorch not available, skip GPU cleanup
+            
+    except Exception:
+        pass  # Silent cleanup failure
 
 
 @dataclass
@@ -186,7 +205,11 @@ class WhisperGPULoadBalancer:
                     })
                 
                 # Perform transcription
-                result = recognizer.transcribe(audio_path)
+                try:
+                    result = recognizer.transcribe(audio_path)
+                finally:
+                    # Clean up GPU memory after model inference on this specific GPU
+                    cleanup_whisper_gpu_memory()
             
             processing_time = time.time() - start_time
             
