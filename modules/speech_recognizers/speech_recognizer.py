@@ -3,8 +3,8 @@ import os
 
 class SpeechRecognizer:
     model_size = 'large_v3'
-    device = 'cuda'
-    compute_type = 'float32'
+    device = 'cuda:1'
+    compute_type = 'float16'
     batch_size = 16
     language = "vi"
     device_index = []

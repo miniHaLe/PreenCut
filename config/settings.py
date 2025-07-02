@@ -64,15 +64,15 @@ class GPUConfig:
     available_gpus: List[int] = field(default_factory=list)
     whisper_device: str = "cpu"
     whisper_gpu_ids: List[int] = field(default_factory=list)
-    whisper_compute_type: str = "float32"
-    whisper_batch_size: int = 16
+    whisper_compute_type: str = "float16"  # Default to float16 for Whisper
+    whisper_batch_size: int = 8
 
 
 @dataclass
 class ModelConfig:
     """AI Model configuration."""
     whisper_model_size: str = "large-v3"
-    speech_recognizer_type: str = "whisperx"
+    speech_recognizer_type: str = "faster_whisper"
     whisper_language: str = "vi"
     whisper_auto_detect_language: bool = False
     enable_alignment: bool = True
@@ -255,32 +255,40 @@ class ConfigManager:
             available_gpus = list(range(torch.cuda.device_count()))
             device_type = "cuda"
         
-        # Check environment variables
+        # Check environment variables for CUDA_VISIBLE_DEVICES
         cuda_visible = os.getenv('CUDA_VISIBLE_DEVICES', '')
         if cuda_visible:
             try:
+                # When CUDA_VISIBLE_DEVICES is set, GPU indices are remapped
+                # So if CUDA_VISIBLE_DEVICES=1, then cuda:0 refers to physical GPU 1
                 selected_gpus = [int(x.strip()) for x in cuda_visible.split(',') if x.strip()]
+                
+                # For Whisper, we use cuda which maps to the first visible GPU
+                whisper_device = os.getenv('WHISPER_DEVICE', 'cuda')
+                
                 return GPUConfig(
                     device_type="cuda",
                     available_gpus=available_gpus,
-                    whisper_device="cuda",
-                    whisper_gpu_ids=selected_gpus,
+                    whisper_device=whisper_device,
+                    whisper_gpu_ids=[0],  # Always use index 0 when CUDA_VISIBLE_DEVICES is set
                     whisper_compute_type=os.getenv('WHISPER_COMPUTE_TYPE', 'float16'),
-                    whisper_batch_size=self._get_env_int('WHISPER_BATCH_SIZE', 16)
+                    whisper_batch_size=self._get_env_int('WHISPER_BATCH_SIZE', 8)  # Reduced batch size for memory
                 )
             except ValueError:
                 pass
         
-        # Default GPU configuration
+        # Default GPU configuration when no CUDA_VISIBLE_DEVICES is set
         if available_gpus:
-            restricted_gpus = [gpu for gpu in available_gpus if gpu < 1]  # Only use GPU 0
+            # Use GPU 1 by default to avoid conflicts with GPU 0
+            whisper_gpus = [1] if len(available_gpus) > 1 else [0]
+            
             return GPUConfig(
                 device_type="cuda",
                 available_gpus=available_gpus,
                 whisper_device="cuda",
-                whisper_gpu_ids=restricted_gpus,
+                whisper_gpu_ids=whisper_gpus,
                 whisper_compute_type=os.getenv('WHISPER_COMPUTE_TYPE', 'float16'),
-                whisper_batch_size=self._get_env_int('WHISPER_BATCH_SIZE', 16)
+                whisper_batch_size=self._get_env_int('WHISPER_BATCH_SIZE', 8)  # Reduced batch size
             )
         
         return GPUConfig(
@@ -335,7 +343,7 @@ class ConfigManager:
         # Model configuration
         model_config = ModelConfig(
             whisper_model_size=os.getenv('WHISPER_MODEL_SIZE', 'large-v3'),
-            speech_recognizer_type=os.getenv('SPEECH_RECOGNIZER_TYPE', 'whisperx'),
+            speech_recognizer_type=os.getenv('SPEECH_RECOGNIZER_TYPE', 'faster_whisper'),
             whisper_language=os.getenv('WHISPER_LANGUAGE', 'vi'),
             whisper_auto_detect_language=self._get_env_bool('WHISPER_AUTO_DETECT_LANGUAGE', False),
             enable_alignment=self._get_env_bool('ENABLE_ALIGNMENT', True),
@@ -393,12 +401,22 @@ class ConfigManager:
     
     def get_llm_model_options(self) -> List[Dict[str, Any]]:
         """Get LLM model options."""
+        default_model = self.config.ollama.default_model
         return [
             {
-                "model": self.config.ollama.default_model,
+                "model": default_model,
+                "base_url": self.config.ollama.base_url,
+                "label": default_model,  # Use the actual model name as label
+                "max_tokens": 8192,
+                "temperature": 0.6,
+                "supports_structured_output": True,
+            },
+            # Also add compatibility entry for short name
+            {
+                "model": default_model,
                 "base_url": self.config.ollama.base_url,
                 "label": "llama3.1",
-                "max_tokens": 4096,
+                "max_tokens": 8192,
                 "temperature": 0.6,
                 "supports_structured_output": True,
             }

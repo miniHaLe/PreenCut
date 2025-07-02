@@ -610,6 +610,8 @@ class LLMProcessor:
             print("[DEBUG] No relevant segments found, trying broader search with ranking")
             # Try broader search with enhanced fallback
             relevant_segments = self._find_relevant_segments_enhanced_fallback(sentence_segments, prompt)
+        else:
+            print(f"[DEBUG] Found {len(relevant_segments)} relevant segments with enhanced LLM")
         
         # Sort by relevance score (highest first)
         if relevant_segments:
@@ -680,12 +682,18 @@ class LLMProcessor:
             "- Đề cập trực tiếp đến chủ đề (relevance ≥ 8)\n"
             "- Thảo luận gián tiếp hoặc liên quan (relevance ≥ 6)\n"
             "- Bối cảnh hoặc dẫn dắt đến chủ đề (relevance ≥ 5)\n\n"
-            "Đối với mỗi phân đoạn, hãy:\n"
+            "QUAN TRỌNG: Đối với mỗi phân đoạn, BẮT BUỘC phải cung cấp:\n"
             "1. Xác định thời gian chính xác (tối thiểu 15 giây)\n"
-            "2. Đánh giá relevance_score (chỉ lấy ≥ 5)\n"
-            "3. Đánh giá engagement_score (khả năng thu hút)\n"
+            "2. Đánh giá relevance_score chính xác từ 1-10 (KHÔNG được bỏ trống hoặc null)\n"
+            "3. Đánh giá engagement_score từ 1-10 (khả năng thu hút)\n"
             "4. Viết summary ngắn và detailed_summary dài\n"
             "5. Tạo hook_text hấp dẫn\n"
+            "6. Đếm chính xác word_count\n\n"
+            "LƯU Ý: relevance_score phải được tính toán cẩn thận:\n"
+            "- 9-10: Đề cập trực tiếp, chi tiết về chủ đề\n"
+            "- 7-8: Thảo luận rõ ràng về chủ đề\n"
+            "- 5-6: Liên quan gián tiếp hoặc đề cập ngắn\n"
+            "- 1-4: Chỉ liên quan xa hoặc không nên chọn\n\n"
             "6. Thêm tags SEO-friendly\n"
             "7. Đếm word_count chính xác\n"
             "8. Đánh giá viral_potential\n"
@@ -699,24 +707,54 @@ class LLMProcessor:
                 {"role": "user", "content": user_prompt}
             ], format_schema=enhanced_schema)
             
-            print(f"[DEBUG] Enhanced LLM response: {result[:300]}...")
+            print(f"[DEBUG] Enhanced LLM response type: {type(result)}")
+            print(f"[DEBUG] Enhanced LLM response (first 500 chars): {str(result)[:500]}...")
             
             # Parse the enhanced result
             try:
                 parsed_result = json.loads(result)
+                print(f"[DEBUG] Parsed result keys: {parsed_result.keys() if isinstance(parsed_result, dict) else 'Not a dict'}")
                 segments_data = parsed_result.get('relevant_segments', [])
+                print(f"[DEBUG] Found {len(segments_data)} segments in LLM response")
                 
                 if not segments_data:
                     print("[DEBUG] No segments found in enhanced LLM response")
                     return []
                 
+                # Log the first segment for debugging
+                if segments_data:
+                    first_seg = segments_data[0]
+                    print(f"[DEBUG] First segment keys: {list(first_seg.keys())}")
+                    print(f"[DEBUG] First segment relevance_score: {first_seg.get('relevance_score', 'MISSING')}")
+                    print(f"[DEBUG] First segment: {first_seg}")
+                
                 # Convert to enhanced segments format
                 enhanced_segments = []
                 for seg_data in segments_data:
-                    relevance_score = seg_data.get('relevance_score', 5)
+                    # Get relevance score without defaulting to 5
+                    relevance_score = seg_data.get('relevance_score')
                     engagement_score = seg_data.get('engagement_score', 5)
                     
-                    # Only include segments with good relevance
+                    # Check if relevance_score is actually provided by LLM
+                    if relevance_score is None:
+                        print(f"[WARNING] LLM did not provide relevance_score for segment: {seg_data}")
+                        print(f"[DEBUG] Available keys in segment: {list(seg_data.keys())}")
+                        # Skip segments without relevance score to avoid defaulting
+                        continue
+                    
+                    # Validate relevance score
+                    try:
+                        relevance_score = float(relevance_score)
+                        if not (1 <= relevance_score <= 10):
+                            print(f"[WARNING] Invalid relevance_score {relevance_score}, should be 1-10")
+                            continue
+                    except (ValueError, TypeError):
+                        print(f"[ERROR] Cannot convert relevance_score to float: {relevance_score}")
+                        continue
+                    
+                    print(f"[DEBUG] Segment relevance_score: {relevance_score}")
+                    
+                    # Only include segments with good relevance (≥ 5)
                     if relevance_score >= 5:
                         enhanced_segment = {
                             'start': float(seg_data['start_time']),
@@ -733,6 +771,10 @@ class LLMProcessor:
                             'composite_score': (relevance_score * 0.6 + engagement_score * 0.4)  # Weighted score
                         }
                         enhanced_segments.append(enhanced_segment)
+                    else:
+                        print(f"[DEBUG] Skipping segment with low relevance_score: {relevance_score}")
+                
+                print(f"[DEBUG] Created {len(enhanced_segments)} enhanced segments with valid relevance scores")
                 
                 # Merge overlapping segments and extend short ones
                 merged_segments = self._merge_and_extend_enhanced_segments(enhanced_segments, sentence_segments)
@@ -1109,18 +1151,35 @@ class LLMProcessor:
                 "tags": segment["tags"].copy() if isinstance(segment["tags"], list) else [str(segment["tags"])]
             }
             
+            # Transfer relevance_score properly
+            if "relevance_score" in segment:
+                standard_segment["relevance_score"] = segment["relevance_score"]
+            elif "relevance" in segment:
+                standard_segment["relevance_score"] = segment["relevance"]
+            else:
+                # If no relevance score, we should not default to 5 - let it be missing so we can debug
+                print(f"[WARNING] No relevance score found in segment: {segment}")
+            
+            # Transfer other scoring fields if available
+            if "engagement_score" in segment:
+                standard_segment["engagement_score"] = segment["engagement_score"]
+            if "composite_score" in segment:
+                standard_segment["composite_score"] = segment["composite_score"]
+            
             # Add context information to the summary if available
             if "context" in segment and segment["context"] and segment["context"] != segment["summary"]:
                 # Include context in the summary for better understanding
                 standard_segment["summary"] = f"{segment['summary']} - {segment['context']}"
                 
-            # Add relevance score to tags if available
-            if "relevance" in segment:
-                relevance = int(segment["relevance"])
+            # Add relevance score to tags if available for visual identification
+            if "relevance_score" in standard_segment:
+                relevance = int(standard_segment["relevance_score"])
                 if relevance >= 8:
                     standard_segment["tags"].append("độ_liên_quan_cao")
                 elif relevance >= 6:
                     standard_segment["tags"].append("độ_liên_quan_trung_bình")
+                else:
+                    standard_segment["tags"].append("độ_liên_quan_thấp")
                     
             # Add query-related tag for easier identification
             standard_segment["tags"].append("kết_quả_truy_vấn")
@@ -1423,244 +1482,308 @@ class LLMProcessor:
         print(f"[DEBUG] Created {len(segments)} enhanced default segments")
         return segments
 
-    def segment_video_for_social_media(self, subtitles, platform: str = "general", prompt: Optional[str] = None) -> List[Dict]:
-        """
-        Enhanced video segmentation optimized for social media platforms
-        Takes Instagram Reels, TikTok, YouTube Shorts as reference
-        """
-        print(f"[DEBUG] Starting social media optimization for platform: {platform}")
+    def generate_chapters(self, transcript_text: str) -> List[Dict]:
+        """Generate chapters from transcript text using LLM"""
         
-        # Platform-specific constraints
-        platform_configs = {
-            "tiktok": {
-                "max_duration": 180,  # 3 minutes max
-                "optimal_duration": 30,  # 30 seconds sweet spot
-                "engagement_focus": "viral_hooks",
-                "content_style": "trendy"
+        # Define the schema for chapters
+        chapters_schema = {
+            "type": "object",
+            "properties": {
+                "chapters": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "start_time": {"type": "number", "description": "Thời gian bắt đầu (giây)"},
+                            "end_time": {"type": "number", "description": "Thời gian kết thúc (giây)"},
+                            "title": {"type": "string", "description": "Tiêu đề chương (10-50 từ)"},
+                            "summary": {"type": "string", "description": "Tóm tắt chi tiết nội dung chương (100-200 từ), bao gồm các thông tin quan trọng và insights chính"},
+                            "key_points": {"type": "array", "items": {"type": "string"}, "description": "Các điểm chính của chương"},
+                            "duration": {"type": "number", "description": "Thời lượng chương (giây)"}
+                        },
+                        "required": ["start_time", "end_time", "title", "summary", "key_points", "duration"]
+                    }
+                }
             },
-            "instagram": {
-                "max_duration": 90,  # 90 seconds max for Reels
-                "optimal_duration": 25,  # 15-30 seconds optimal
-                "engagement_focus": "visual_appeal",
-                "content_style": "aesthetic"
-            },
-            "youtube_shorts": {
-                "max_duration": 60,  # 60 seconds max
-                "optimal_duration": 45,  # 30-60 seconds optimal
-                "engagement_focus": "retention",
-                "content_style": "informative"
-            },
-            "general": {
-                "max_duration": 120,
-                "optimal_duration": 40,
-                "engagement_focus": "balanced",
-                "content_style": "engaging"
-            }
+            "required": ["chapters"]
         }
         
-        config = platform_configs.get(platform, platform_configs["general"])
-        
-        # Handle subtitle input
-        if isinstance(subtitles, list):
-            subtitle_text = '\n'.join(str(item) for item in subtitles)
-        else:
-            subtitle_text = str(subtitles)
-        
-        # Social media optimized system prompt
         system_prompt = (
-            f"Bạn là chuyên gia tạo nội dung viral cho {platform.upper()}. "
-            "Hãy phân tích video và tạo các clip ngắn có tiềm năng thu hút khán giả cao. "
-            "YÊU CẦU:\n"
-            "1. Mỗi clip phải có hook mạnh mẽ (câu mở đầu hấp dẫn)\n"
-            f"2. Thời lượng tối ưu: {config['optimal_duration']} giây\n"
-            f"3. Tối đa {config['max_duration']} giây\n"
-            "4. Tập trung vào moments có viral potential\n"
-            "5. Tóm tắt phải clickbait nhưng trung thực\n"
-            "6. Tags phải trending và SEO-friendly\n"
-            "7. Đánh giá engagement_score (1-10) cho mỗi clip\n"
-            "8. Thêm viral_potential (low/medium/high)\n"
-            "Trả về JSON với các fields: start, end, summary, tags, word_count, engagement_score, viral_potential, hook_text"
+            "Bạn là chuyên gia phân tích nội dung với khả năng chia video thành các chương logic. "
+            "Nhiệm vụ của bạn là phân tích transcript và tạo ra các chương có ý nghĩa, "
+            "mỗi chương đại diện cho một chủ đề hoặc phần nội dung riêng biệt.\n"
+            "TIÊU CHÍ CHIA CHƯƠNG:\n"
+            "1. Mỗi chương nên dài ít nhất 30 giây và không quá 10 phút\n"
+            "2. Chia theo chủ đề, không gian thời gian, hoặc người nói\n"
+            "3. Đảm bảo các chương không chồng lấn về thời gian\n"
+            "4. Tiêu đề chương ngắn gọn, súc tích (10-50 từ)\n"
+            "5. Tóm tắt chương chi tiết và thông tin (100-200 từ)\n"
+            "6. Tạo 3-5 điểm chính cho mỗi chương\n"
+            "7. Tính toán chính xác duration = end_time - start_time"
         )
         
-        # Platform-specific user prompt
         user_prompt = (
-            f"Phân tích video và tạo tối đa 8 clips cho {platform}. "
-            f"Tìm những khoảnh khắc: {config['engagement_focus']}. "
-            f"Style: {config['content_style']}. "
-            "Mỗi clip cần:\n"
-            "- start/end (giây)\n"
-            "- summary: Tiêu đề clickbait (20-40 từ)\n"
-            "- tags: 5-7 hashtags trending\n"
-            "- word_count: số từ trong clip\n"
-            "- engagement_score: điểm thu hút (1-10)\n"
-            "- viral_potential: khả năng viral (low/medium/high)\n"
-            "- hook_text: câu mở đầu hấp dẫn (10-15 từ)\n"
-            f"Prompt người dùng: {prompt or 'Tìm nội dung viral nhất'}"
+            "Hãy phân tích transcript sau đây và chia thành các chương logic:\n\n"
+            f"{transcript_text}\n\n"
+            "Tạo các chương với:\n"
+            "- Thời gian bắt đầu và kết thúc chính xác\n"
+            "- Tiêu đề mô tả nội dung chính của chương\n"
+            "- Tóm tắt chi tiết và đầy đủ nội dung của từng chương\n"
+            "- Các điểm chính trong chương\n"
+            "- Thời lượng chính xác của chương"
         )
-        
-        full_prompt = f"{user_prompt}\n\nNội dung video:\n{subtitle_text}"
-        
-        print(f"[DEBUG] Optimizing for {platform} with {config['optimal_duration']}s target")
         
         try:
             result = self._call_ollama([
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": full_prompt}
-            ], format_json=True)
+                {"role": "user", "content": user_prompt}
+            ], format_schema=chapters_schema)
             
-            print(f"[DEBUG] Social media response (first 500 chars): {result[:500]}")
+            print(f"[DEBUG] Chapter generation response: {result[:300]}...")
             
-            segments = self._parse_and_validate_social_media_response(result, config)
-            if segments:
-                # Sort by engagement score (highest first)
-                segments.sort(key=lambda x: x.get('engagement_score', 0), reverse=True)
-                print(f"[DEBUG] Generated {len(segments)} social media optimized segments")
-                return segments
-                
-        except Exception as e:
-            print(f"[DEBUG] Social media optimization failed: {str(e)}")
-        
-        # Fallback to enhanced regular segmentation
-        return self.segment_video(subtitles, prompt)
-
-    def _parse_and_validate_social_media_response(self, result: str, config: Dict) -> List[Dict]:
-        """Parse and validate social media optimized segments"""
-        try:
-            # Clean and parse JSON
-            result = result.strip()
-            result = re.sub(r'<think>.*?</think>', '', result, flags=re.DOTALL)
-            
-            if result.startswith("```json"):
-                result = result[7:-3] if result.endswith("```") else result[7:]
-            elif result.startswith("```"):
-                result = result[3:-3] if result.endswith("```") else result[3:]
-            
-            # Find JSON array
-            start_idx = result.find('[')
-            end_idx = result.rfind(']')
-            
-            if start_idx != -1 and end_idx != -1:
-                json_str = result[start_idx:end_idx + 1]
-                segments = json.loads(json_str)
-            else:
-                segments = json.loads(result)
-            
-            if not isinstance(segments, list):
-                return []
-            
-            # Validate and enhance segments
-            valid_segments = []
-            for i, segment in enumerate(segments):
-                if not isinstance(segment, dict):
-                    continue
-                
-                # Required fields validation
-                if 'start' not in segment or 'end' not in segment:
-                    continue
-                
+            # Parse the response
+            if isinstance(result, str):
                 try:
-                    segment['start'] = float(segment['start'])
-                    segment['end'] = float(segment['end'])
-                    duration = segment['end'] - segment['start']
-                    
-                    # Skip segments that are too long for the platform
-                    if duration > config['max_duration']:
-                        continue
-                    
-                    # Set defaults for missing fields
-                    segment.setdefault('summary', f"Clip viral #{i+1}")
-                    segment.setdefault('tags', ['viral', 'trending', 'hot'])
-                    segment.setdefault('word_count', len(segment.get('summary', '').split()))
-                    segment.setdefault('engagement_score', 5)
-                    segment.setdefault('viral_potential', 'medium')
-                    segment.setdefault('hook_text', "Bạn có biết...")
-                    
-                    # Validate engagement_score
-                    if not isinstance(segment.get('engagement_score'), (int, float)):
-                        segment['engagement_score'] = 5
-                    segment['engagement_score'] = max(1, min(10, segment['engagement_score']))
-                    
-                    # Validate viral_potential
-                    if segment.get('viral_potential') not in ['low', 'medium', 'high']:
-                        segment['viral_potential'] = 'medium'
-                    
-                    valid_segments.append(segment)
-                    
-                except (ValueError, TypeError) as e:
-                    print(f"[DEBUG] Error processing social media segment {i}: {e}")
-                    continue
+                    parsed_result = json.loads(result)
+                except json.JSONDecodeError:
+                    # Fallback: try to extract JSON from the response
+                    json_match = re.search(r'\{.*\}', result, re.DOTALL)
+                    if json_match:
+                        parsed_result = json.loads(json_match.group())
+                    else:
+                        raise ValueError("Could not parse JSON from response")
+            else:
+                parsed_result = result
             
-            return valid_segments
+            chapters = parsed_result.get("chapters", [])
             
-        except (json.JSONDecodeError, Exception) as e:
-            print(f"[DEBUG] Social media parsing error: {e}")
-            return []
+            # Validate and fix chapters
+            validated_chapters = []
+            for chapter in chapters:
+                if all(key in chapter for key in ["start_time", "end_time", "title", "summary", "key_points"]):
+                    # Calculate duration if not present
+                    if "duration" not in chapter:
+                        chapter["duration"] = chapter["end_time"] - chapter["start_time"]
+                    
+                    # Ensure key_points is a list
+                    if not isinstance(chapter["key_points"], list):
+                        chapter["key_points"] = [str(chapter["key_points"])]
+                    
+                    validated_chapters.append(chapter)
+            
+            if not validated_chapters:
+                # Fallback: create a single chapter for the entire content
+                validated_chapters = [{
+                    "start_time": 0,
+                    "end_time": 300,  # Default 5 minutes
+                    "title": "Nội dung chính",
+                    "summary": "Tóm tắt toàn bộ nội dung",
+                    "key_points": ["Điểm chính 1", "Điểm chính 2"],
+                    "duration": 300
+                }]
+            
+            return validated_chapters
+            
+        except Exception as e:
+            print(f"Error generating chapters: {str(e)}")
+            # Return a fallback chapter
+            return [{
+                "start_time": 0,
+                "end_time": 300,
+                "title": "Nội dung chính",
+                "summary": "Không thể tạo chương tự động. Vui lòng kiểm tra transcript.",
+                "key_points": ["Nội dung cần được phân tích thủ công"],
+                "duration": 300
+            }]
 
-    def get_best_clips_for_platform(self, segments: List[Dict], platform: str, max_clips: int = 5) -> List[Dict]:
-        """
-        Select the best clips for a specific platform based on engagement and viral potential
-        """
-        if not segments:
-            return []
+    def generate_individual_chapter_summary(self, chapter_text: str, chapter_title: str) -> Dict:
+        """Generate detailed summary for a single chapter"""
         
-        # Platform-specific scoring weights
-        scoring_weights = {
-            "tiktok": {
-                "engagement_score": 0.4,
-                "viral_potential": 0.4,
-                "duration_match": 0.2,
-                "optimal_duration": 30
+        summary_schema = {
+            "type": "object",
+            "properties": {
+                "detailed_summary": {"type": "string", "description": "Tóm tắt chi tiết và đầy đủ (150-300 từ)"},
+                "key_insights": {"type": "array", "items": {"type": "string"}, "description": "Những insights và điểm quan trọng nhất (3-5 điểm)"},
+                "main_topics": {"type": "array", "items": {"type": "string"}, "description": "Các chủ đề chính được đề cập"},
+                "action_items": {"type": "array", "items": {"type": "string"}, "description": "Các hành động hoặc takeaways có thể áp dụng (nếu có)"}
             },
-            "instagram": {
-                "engagement_score": 0.3,
-                "viral_potential": 0.3,
-                "duration_match": 0.4,
-                "optimal_duration": 25
-            },
-            "youtube_shorts": {
-                "engagement_score": 0.5,
-                "viral_potential": 0.2,
-                "duration_match": 0.3,
-                "optimal_duration": 45
-            }
+            "required": ["detailed_summary", "key_insights", "main_topics"]
         }
         
-        weights = scoring_weights.get(platform, scoring_weights["tiktok"])
+        system_prompt = (
+            "Bạn là chuyên gia phân tích nội dung chuyên sâu. Nhiệm vụ của bạn là tạo ra một "
+            "bản tóm tắt chi tiết và toàn diện cho từng chương, bao gồm tất cả thông tin quan trọng, "
+            "insights, và takeaways mà người xem có thể học được từ phần này."
+        )
         
-        # Calculate composite scores
-        scored_segments = []
-        for segment in segments:
-            duration = segment.get('end', 0) - segment.get('start', 0)
-            
-            # Duration score (closer to optimal = higher score)
-            duration_diff = abs(duration - weights['optimal_duration'])
-            duration_score = max(0, 10 - (duration_diff / 5))
-            
-            # Viral potential score
-            viral_scores = {'low': 3, 'medium': 6, 'high': 10}
-            viral_score = viral_scores.get(segment.get('viral_potential', 'medium'), 6)
-            
-            # Engagement score
-            engagement = segment.get('engagement_score', 5)
-            
-            # Calculate composite score
-            composite_score = (
-                engagement * weights['engagement_score'] +
-                viral_score * weights['viral_potential'] +
-                duration_score * weights['duration_match']
-            )
-            
-            segment_copy = segment.copy()
-            segment_copy['composite_score'] = round(composite_score, 2)
-            segment_copy['duration'] = round(duration, 1)
-            scored_segments.append(segment_copy)
+        user_prompt = (
+            f"Hãy phân tích và tóm tắt chi tiết chương sau:\n\n"
+            f"TIÊU ĐỀ CHƯƠNG: {chapter_title}\n\n"
+            f"NỘI DUNG:\n{chapter_text}\n\n"
+            "Tạo một bản tóm tắt bao gồm:\n"
+            "1. Tóm tắt chi tiết và đầy đủ nội dung (150-300 từ)\n"
+            "2. Những insights và điểm quan trọng nhất\n"
+            "3. Các chủ đề chính được đề cập\n"
+            "4. Các hành động hoặc takeaways có thể áp dụng (nếu có)"
+        )
         
-        # Sort by composite score and return top clips
-        scored_segments.sort(key=lambda x: x['composite_score'], reverse=True)
-        best_clips = scored_segments[:max_clips]
+        try:
+            result = self._call_ollama([
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ], format_schema=summary_schema)
+            
+            if isinstance(result, str):
+                try:
+                    parsed_result = json.loads(result)
+                except json.JSONDecodeError:
+                    json_match = re.search(r'\{.*\}', result, re.DOTALL)
+                    if json_match:
+                        parsed_result = json.loads(json_match.group())
+                    else:
+                        return {
+                            "detailed_summary": "Không thể tạo tóm tắt chi tiết",
+                            "key_insights": ["Lỗi xử lý"],
+                            "main_topics": ["Không xác định"]
+                        }
+            else:
+                parsed_result = result
+            
+            return parsed_result
+            
+        except Exception as e:
+            print(f"[ERROR] Error generating individual chapter summary: {str(e)}")
+            return {
+                "detailed_summary": "Không thể tạo tóm tắt chi tiết",
+                "key_insights": ["Lỗi xử lý"],
+                "main_topics": ["Không xác định"]
+            }
+
+    def generate_transcription_summary(self, transcript_text: str) -> Dict:
+        """Generate a comprehensive summary of the entire transcription in Vietnamese"""
         
-        print(f"[DEBUG] Selected {len(best_clips)} best clips for {platform}")
-        for i, clip in enumerate(best_clips):
-            print(f"  Clip {i+1}: Score {clip['composite_score']}, Duration {clip['duration']}s, Viral: {clip.get('viral_potential', 'N/A')}")
+        # Schema for structured transcription summary
+        summary_schema = {
+            "type": "object",
+            "properties": {
+                "summary": {
+                    "type": "string",
+                    "description": "Tóm tắt tổng quan về nội dung chính của video/âm thanh"
+                },
+                "highlights": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Các điểm nổi bật quan trọng nhất"
+                },
+                "key_insights": {
+                    "type": "array", 
+                    "items": {"type": "string"},
+                    "description": "Những hiểu biết và bài học chính"
+                },
+                "conclusion": {
+                    "type": "string",
+                    "description": "Kết luận tổng thể"
+                }
+            },
+            "required": ["summary", "highlights", "key_insights", "conclusion"]
+        }
         
-        return best_clips
+        # Vietnamese prompt for comprehensive transcription summary
+        messages = [
+            {
+                "role": "system",
+                "content": """Bạn là một chuyên gia phân tích nội dung video/âm thanh. Nhiệm vụ của bạn là tạo một bản tóm tắt toàn diện, có cấu trúc và dễ hiểu về toàn bộ nội dung transcript.
+
+HƯỚNG DẪN:
+- Phân tích toàn bộ transcript để hiểu nội dung chính
+- Tạo tóm tắt bằng tiếng Việt, dễ hiểu và mạch lạc
+- Tập trung vào những thông tin quan trọng và hữu ích nhất
+- Cung cấp cái nhìn tổng thể về chủ đề và nội dung
+
+CẤU TRÚC PHẢN HỒI:
+- summary: Tóm tắt tổng quan chi tiết (200-400 từ)
+- highlights: 5-8 điểm nổi bật quan trọng nhất
+- key_insights: 4-6 hiểu biết/bài học chính
+- conclusion: Kết luận ngắn gọn nhưng đầy đủ ý nghĩa
+
+Đảm bảo nội dung phù hợp với văn hóa và ngôn ngữ Việt Nam."""
+            },
+            {
+                "role": "user", 
+                "content": f"""Hãy tạo tóm tắt toàn diện cho transcript sau:
+
+{transcript_text}
+
+Vui lòng tạo tóm tắt có cấu trúc theo yêu cầu."""
+            }
+        ]
+        
+        try:
+            print("Đang tạo tóm tắt transcription...")
+            response = self._call_ollama(messages, summary_schema)
+            
+            # Parse the JSON response
+            result = json.loads(response)
+            
+            # Validate required fields
+            required_fields = ["summary", "highlights", "key_insights", "conclusion"]
+            for field in required_fields:
+                if field not in result:
+                    result[field] = []
+            
+            # Ensure lists are properly formatted
+            if not isinstance(result.get("highlights"), list):
+                result["highlights"] = []
+            if not isinstance(result.get("key_insights"), list):
+                result["key_insights"] = []
+                
+            print(f"Tạo tóm tắt transcription thành công")
+            return result
+            
+        except json.JSONDecodeError as e:
+            print(f"[ERROR] JSON parsing error for transcription summary: {str(e)}")
+            # Try to parse without schema
+            try:
+                messages_simple = [
+                    {
+                        "role": "system",
+                        "content": "Bạn là chuyên gia phân tích nội dung. Tạo tóm tắt toàn diện bằng tiếng Việt."
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Tóm tắt nội dung chính của transcript sau:\n\n{transcript_text[:3000]}..."
+                    }
+                ]
+                
+                simple_response = self._call_ollama(messages_simple)
+                
+                return {
+                    "summary": simple_response,
+                    "highlights": ["Nội dung chính từ transcript"],
+                    "key_insights": ["Phân tích từ nội dung được cung cấp"],
+                    "conclusion": "Tóm tắt được tạo thành công"
+                }
+                
+            except Exception as e2:
+                print(f"[ERROR] Fallback transcription summary failed: {str(e2)}")
+                return self._get_fallback_transcription_summary()
+                
+        except Exception as e:
+            print(f"[ERROR] Error generating transcription summary: {str(e)}")
+            return self._get_fallback_transcription_summary()
+    
+    def _get_fallback_transcription_summary(self) -> Dict:
+        """Fallback summary when LLM processing fails"""
+        return {
+            "summary": "Không thể tạo tóm tắt tự động. Vui lòng kiểm tra lại nội dung transcript và thử lại.",
+            "highlights": [
+                "Lỗi xử lý tóm tắt",
+                "Cần kiểm tra kết nối mô hình AI",
+                "Thử lại sau"
+            ],
+            "key_insights": [
+                "Hệ thống gặp sự cố khi phân tích nội dung",
+                "Cần khắc phục vấn đề kỹ thuật"
+            ],
+            "conclusion": "Tóm tắt sẽ được tạo lại khi hệ thống hoạt động bình thường."
+        }

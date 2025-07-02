@@ -20,7 +20,10 @@ class SpeechRecognizerFactory:
 
     @staticmethod
     def get_speech_recognizer_by_type(type, model_size) -> SpeechRecognizer:
-        if type == 'faster-whisper':
+        # Normalize the type name to handle both 'faster-whisper' and 'faster_whisper'
+        normalized_type = type.replace('-', '_')
+        
+        if normalized_type == 'faster_whisper':
             speech_recognizer = FasterWhisperSpeechRecognizer(
                 model_size,
                 WHISPER_DEVICE,
@@ -29,7 +32,7 @@ class SpeechRecognizerFactory:
                 beam_size=FASTER_WHISPER_BEAM_SIZE,
                 language=WHISPER_LANGUAGE
             )
-        elif type == 'whisperx':
+        elif normalized_type == 'whisperx':
             speech_recognizer = WhisperXSpeechRecognizer(
                 model_size,
                 WHISPER_DEVICE,
@@ -39,5 +42,5 @@ class SpeechRecognizerFactory:
                 language=WHISPER_LANGUAGE
             )
         else:
-            raise Error("not support speech recognizer type")
+            raise Error(f"not support speech recognizer type: {type}")
         return speech_recognizer

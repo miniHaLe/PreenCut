@@ -3,6 +3,9 @@ import uuid
 import time
 import random
 import zipfile
+import traceback
+import torch
+import gc
 import gradio as gr
 from config import LLM_MODEL_OPTIONS
 
@@ -28,6 +31,151 @@ import subprocess
 processing_queue = ProcessingQueue()
 CHECKBOX_CHECKED = '<span style="display: flex; width: 16px; height: 16px; border: 2px solid blue; background:#4B6BFB ;font-weight: bold;color:white;align-items:center;justify-content:center">✓</span>'
 CHECKBOX_UNCHECKED = '<span style="display: flex; width: 16px; height: 16px; border: 2px solid blue;font-weight: bold;color:white;align-items:center;justify-content:center"></span>'
+
+# Global storage for transcription summaries (replaces chapter summaries)
+transcription_summaries_cache = {}
+
+
+def format_transcription_summary_markdown(summary_data: Dict) -> str:
+    """Format transcription summary data as clean Markdown for Gradio"""
+    if not summary_data:
+        return """
+## ⚠️ Không có tóm tắt nào được tạo
+
+Hệ thống không thể tạo tóm tắt cho nội dung này.
+        """
+    
+    summary = summary_data.get('summary', 'Không có tóm tắt')
+    highlights = summary_data.get('highlights', [])
+    key_insights = summary_data.get('key_insights', [])
+    conclusion = summary_data.get('conclusion', 'Không có kết luận')
+    
+    # Build markdown content
+    markdown_content = f"""
+# 📋 Tóm tắt nội dung transcription
+
+## 📄 Tóm tắt chính
+{summary}
+
+"""
+    
+    # Add highlights if available
+    if highlights and isinstance(highlights, list) and len(highlights) > 0:
+        markdown_content += "## ✨ Điểm nổi bật\n"
+        for highlight in highlights:
+            if highlight and highlight.strip():
+                markdown_content += f"- {highlight}\n"
+        markdown_content += "\n"
+    
+    # Add key insights if available
+    if key_insights and isinstance(key_insights, list) and len(key_insights) > 0:
+        markdown_content += "## 🔑 Những hiểu biết chính\n"
+        for insight in key_insights:
+            if insight and insight.strip():
+                markdown_content += f"- {insight}\n"
+        markdown_content += "\n"
+    
+    # Add conclusion
+    markdown_content += f"""## 🎯 Kết luận
+{conclusion}
+
+---
+**💡 Ghi chú:** Tóm tắt này được tạo tự động bằng AI từ toàn bộ nội dung video. 
+Để hiểu rõ và đầy đủ nhất, hãy tham khảo cùng với video gốc.
+"""
+    
+    return markdown_content
+
+
+def normalize_relevancy_score(score) -> float:
+    """Normalize relevancy score to 1-10 scale from various input ranges"""
+    if score is None:
+        return 5.0  # Default neutral score
+    
+    try:
+        score_float = float(score)
+        
+        # If score is 0, always maps to 1.0
+        if score_float == 0.0:
+            return 1.0
+        
+        # If score is in 0.01-0.99 range (clearly decimal), scale to 1-10
+        elif 0.01 <= score_float <= 0.99:
+            normalized = score_float * 9.0 + 1.0
+            return round(normalized, 1)
+        
+        # If score is exactly 1.0, assume it's max of 0-1 range -> 10.0
+        elif score_float == 1.0:
+            return 10.0
+        
+        # If score is in 1.01-10.0 range, it's already in target range
+        elif 1.01 <= score_float <= 10.0:
+            return round(score_float, 1)
+        
+        # If score is in 10.01-100 range, scale from 0-100 to 1-10
+        elif 10.01 <= score_float <= 100.0:
+            normalized = (score_float / 100.0) * 9.0 + 1.0
+            return round(normalized, 1)
+        
+        # If score is negative, clamp to 1.0
+        elif score_float < 0:
+            return 1.0
+        
+        # If score is > 100, clamp to 10.0
+        else:
+            return 10.0
+            
+    except (ValueError, TypeError):
+        print(f"Warning: Could not parse relevancy score '{score}', using default 5.0")
+        return 5.0
+
+
+def format_transcription_summary_html(summary_data: Dict) -> str:
+    """Legacy HTML formatter - deprecated, use format_transcription_summary_markdown instead"""
+    # Keep for backward compatibility but redirect to markdown version
+    return format_transcription_summary_markdown(summary_data)
+
+
+def get_transcription_summary_for_task(task_id: str) -> str:
+    """Get formatted transcription summary Markdown for a task"""
+    try:
+        print(f"[DEBUG] Getting transcription summary for task: {task_id}")
+        
+        # Get the processing result
+        result = processing_queue.get_result(task_id)
+        print(f"[DEBUG] Task status: {result.get('status')}")
+        
+        if result["status"] != "completed":
+            return """
+## ⏳ Đang xử lý
+
+Vui lòng hoàn thành xử lý video trước khi xem tóm tắt.
+            """
+        
+        # Get transcription summary from results
+        summary_data = result.get("transcription_summary")
+        print(f"[DEBUG] Summary data available: {summary_data is not None}")
+        
+        if not summary_data:
+            return """
+## ⚠️ Không có tóm tắt
+
+Tóm tắt có thể chưa được tạo hoặc gặp lỗi trong quá trình xử lý.
+            """
+        
+        formatted_summary = format_transcription_summary_markdown(summary_data)
+        print(f"[DEBUG] Formatted summary length: {len(formatted_summary)}")
+        return formatted_summary
+        
+    except Exception as e:
+        print(f"Lỗi lấy tóm tắt transcription: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return f"""
+## ❌ Lỗi hiển thị tóm tắt
+
+{str(e)}
+        """
 
 
 def check_uploaded_files(files: List) -> str:
@@ -59,11 +207,52 @@ def check_uploaded_files(files: List) -> str:
     return saved_paths
 
 
-def process_files_with_progress(files: List, llm_model: str,
-                  prompt: Optional[str] = None,
-                  whisper_model_size: Optional[str] = None,
-                  progress=gr.Progress()) -> Tuple[str, Dict, List, List]:
-    """Processing uploaded files with real-time progress"""
+def update_processing_status(task_id: str, progress: float, desc: str):
+    """Update processing status in the queue for display in status column"""
+    with processing_queue.lock:
+        if task_id in processing_queue.results:
+            processing_queue.results[task_id].update({
+                "progress": progress,
+                "progress_desc": desc,
+                "timestamp": time.time()
+            })
+
+
+def clear_gpu_memory():
+    """Clear GPU VRAM after processing"""
+    try:
+        if torch.cuda.is_available():
+            # Clear PyTorch GPU cache
+            torch.cuda.empty_cache()
+            
+            # Force garbage collection
+            gc.collect()
+            
+            print("✅ GPU VRAM cleared successfully")
+        else:
+            print("ℹ️ No GPU available, skipping VRAM cleanup")
+    except Exception as e:
+        print(f"⚠️ Error clearing GPU memory: {e}")
+
+
+def process_files_with_progress(files: List, progress=gr.Progress(track_tqdm=True)) -> Tuple[str, Dict]:
+    """Processing uploaded files with progress bar updates"""
+    
+    print(f"[DEBUG] process_files_with_progress called with {len(files) if files else 0} files")
+    print(f"[DEBUG] Progress object type: {type(progress)}")
+    
+    # Use default values for removed UI components
+    llm_model = LLM_MODEL_OPTIONS[0]['label'] if LLM_MODEL_OPTIONS else "llama3.1"
+    prompt = None  # No prompt needed as per user request
+    whisper_model_size = WHISPER_MODEL_SIZE  # Use default from config
+    
+    # Initialize progress tracking
+    try:
+        print("[DEBUG] Calling progress(0, desc='Đang khởi tạo...')")
+        progress(0, desc="Đang khởi tạo...")
+        print("[DEBUG] Progress call successful")
+    except Exception as e:
+        print(f"[DEBUG] Progress call failed: {e}")
     
     # Check whether the uploaded files meet the requirements
     saved_paths = check_uploaded_files(files)
@@ -71,64 +260,92 @@ def process_files_with_progress(files: List, llm_model: str,
     # Create a unique task ID
     task_id = f"task_{uuid.uuid4().hex}"
     
-    progress(0.01, desc="Khởi tạo tác vụ...")
-    time.sleep(0.1)  # Small delay to show progress
-    
     print(f"Bắt đầu xử lý: {task_id}, Đường dẫn tệp: {saved_paths}", flush=True)
 
+    # Initialize status in processing queue
+    with processing_queue.lock:
+        processing_queue.results[task_id] = {
+            "status": "processing",
+            "progress": 0.05,
+            "progress_desc": "Khởi tạo tác vụ...",
+            "timestamp": time.time()
+        }
+    
+    # Return immediate status for UI updates
+    initial_status = {
+        "task_id": task_id,
+        "status": "Đang xử lý...",
+        "progress": 0.05,
+        "progress_desc": "Khởi tạo tác vụ..."
+    }
+
     # Process files directly with progress
-    from modules.speech_recognizers.speech_recognizer_factory import SpeechRecognizerFactory
     from modules.llm_processor import LLMProcessor
     from modules.video_processor import VideoProcessor
     from config import SPEECH_RECOGNIZER_TYPE, ENABLE_ALIGNMENT
+    from services.speech_recognition_service import SpeechRecognitionService
     
     progress(0.05, desc="Khởi tạo các mô hình...")
+    update_processing_status(task_id, 0.05, "Khởi tạo các mô hình...")
     
     try:
-        # Initialize models
-        recognizer = SpeechRecognizerFactory.get_speech_recognizer_by_type(
-            SPEECH_RECOGNIZER_TYPE, whisper_model_size)
+        # Initialize models with new service
+        speech_service = SpeechRecognitionService(recognizer_type=SPEECH_RECOGNIZER_TYPE)
         llm = LLMProcessor(llm_model)
         
         progress(0.1, desc="Đã khởi tạo các mô hình")
+        update_processing_status(task_id, 0.1, "Đã khởi tạo các mô hình")
         
-        # Process each file with progress
+        # Process each file with tqdm progress bars for better UX
         file_results = []
         total_files = len(saved_paths)
         
-        for i, file_path in progress.tqdm(enumerate(saved_paths), desc="Xử lý từng tệp", total=total_files):
-            file_progress_base = 0.1 + (i / total_files) * 0.8
-            file_progress_weight = 0.8 / total_files
-            
-            progress(file_progress_base, desc=f"Đang xử lý tệp {i + 1}/{total_files}: {os.path.basename(file_path)}")
+        # Use tqdm progress bar for file processing
+        for i, file_path in enumerate(progress.tqdm(saved_paths, desc="Processing files")):
+            print(f"Processing file {i+1}/{total_files}: {os.path.basename(file_path)}")
             
             # Extract audio (if video)
             if file_path.lower().endswith(('.mp4', '.avi', '.mov', '.mkv', '.ts', '.mxf')):
-                progress(file_progress_base + file_progress_weight * 0.1, 
-                        desc=f"Trích xuất âm thanh từ {os.path.basename(file_path)}")
+                progress(0.2 + (i * 0.8 / total_files), desc=f"Extracting information from {os.path.basename(file_path)}")
+                update_processing_status(task_id, 0.2 + (i * 0.8 / total_files), f"Trích xuất thông tin từ {os.path.basename(file_path)}")
                 audio_path = VideoProcessor.extract_audio(file_path, task_id)
             else:
                 audio_path = file_path
 
             # Speech Recognition
-            progress(file_progress_base + file_progress_weight * 0.2, 
-                    desc=f"Nhận dạng giọng nói: {os.path.basename(file_path)}")
+            progress(0.3 + (i * 0.8 / total_files), desc=f"Speech recognition: {os.path.basename(file_path)}")
+            update_processing_status(task_id, 0.3 + (i * 0.8 / total_files), f"Nhận dạng giọng nói: {os.path.basename(file_path)}")
             
             print(f"Bắt đầu nhận dạng giọng nói: {file_path}")
-            result = recognizer.transcribe(audio_path)
+            result = speech_service.transcribe_audio(audio_path)
             print(f"Hoàn thành nhận dạng giọng nói, số phân đoạn: {len(result['segments'])}")
 
-            # Text Alignment (if enabled)
+            # Text Alignment (if enabled) with tqdm for segments
             if ENABLE_ALIGNMENT:
-                progress(file_progress_base + file_progress_weight * 0.6, 
-                        desc=f"Căn chỉnh văn bản: {os.path.basename(file_path)}")
-                from modules.text_aligner import TextAligner
-                aligner = TextAligner(result['language'])
-                result = aligner.align(result["segments"], audio_path)
+                progress(0.5 + (i * 0.8 / total_files), desc=f"Video alignment: {os.path.basename(file_path)}")
+                update_processing_status(task_id, 0.5 + (i * 0.8 / total_files), f"Căn chỉnh video: {os.path.basename(file_path)}")
+                try:
+                    from modules.text_aligner import TextAligner
+                    aligner = TextAligner(result['language'])
+                    aligned_result = aligner.align(result["segments"], audio_path)
+                    
+                    # Check if alignment was successful
+                    if aligned_result.get("alignment_failed", False):
+                        print(f"⚠️ Alignment failed for {file_path}, using original segments")
+                        print(f"Alignment error: {aligned_result.get('alignment_error', 'Unknown error')}")
+                        # Keep original result, don't replace with failed alignment
+                    else:
+                        print(f"✅ Alignment successful for {file_path}")
+                        result = aligned_result
+                        
+                except Exception as e:
+                    print(f"❌ Alignment module error for {file_path}: {str(e)}")
+                    print("Continuing with original segments without alignment")
+                    # Continue with original result
 
             # LLM Processing
-            progress(file_progress_base + file_progress_weight * 0.8, 
-                    desc=f"Phân tích và tóm tắt: {os.path.basename(file_path)}")
+            progress(0.7 + (i * 0.8 / total_files), desc=f"AI analysis: {os.path.basename(file_path)}")
+            update_processing_status(task_id, 0.7 + (i * 0.8 / total_files), f"Phân tích và tóm tắt: {os.path.basename(file_path)}")
             
             print("Gọi mô hình ngôn ngữ lớn để phân đoạn...")
             
@@ -144,21 +361,36 @@ def process_files_with_progress(files: List, llm_model: str,
                 "filepath": file_path
             })
             
-            progress(file_progress_base + file_progress_weight, 
-                    desc=f"Hoàn thành tệp {i + 1}/{total_files}")
+            # Update progress for completed file
+            progress(0.8 + ((i + 1) * 0.1 / total_files), desc=f"Completed file {i + 1}/{total_files}")
+            update_processing_status(task_id, 0.8 + ((i + 1) * 0.1 / total_files), f"Hoàn thành tệp {i + 1}/{total_files}")
         
-        progress(0.95, desc="Chuẩn bị kết quả hiển thị...")
+        # Final preparation steps with tqdm
+        progress(0.9, desc="Preparing results display...")
+        update_processing_status(task_id, 0.9, "Chuẩn bị kết quả hiển thị...")
         
         # Prepare results for display
         display_result = []
         clip_result = []
+        full_transcript = ""
         
         # Create a directory for thumbnails
         thumbnail_dir = os.path.join(TEMP_FOLDER, "thumbnails", task_id)
         os.makedirs(thumbnail_dir, exist_ok=True)
         
-        for file_result in file_results:
-            for seg in file_result["segments"]:
+        # Process results with tqdm progress for better UX
+        for file_result in progress.tqdm(file_results, desc="Building transcripts and thumbnails"):
+            # Build transcript from original speech recognition results
+            align_result = file_result.get("align_result", {})
+            if "segments" in align_result:
+                for seg in align_result["segments"]:
+                    text = seg.get("text", "").strip()
+                    if text:
+                        start_time = seg.get("start", 0)
+                        full_transcript += f"[{seconds_to_hhmmss(start_time)}] {text}\n"
+            
+            # Process segments with tqdm for thumbnail generation
+            for seg in progress.tqdm(file_result["segments"], desc=f"Processing segments for {file_result['filename']}"):
                 # Generate thumbnail at the middle of the segment
                 thumbnail_path = ""
                 try:
@@ -172,17 +404,16 @@ def process_files_with_progress(files: List, llm_model: str,
                 except Exception as e:
                     print(f"Lỗi tạo thumbnail: {str(e)}")
                 
-                # Create row for analysis results table
-                row = [file_result["filename"],
-                       f"{seconds_to_hhmmss(seg['start'])}",
-                       f"{seconds_to_hhmmss(seg['end'])}",
-                       f"{seconds_to_hhmmss(seg['end'] - seg['start'])}",
-                       seg["summary"],
-                       ", ".join(seg["tags"]) if isinstance(seg["tags"], list) else seg["tags"],
-                       thumbnail_path]
-                display_result.append(row)
-                
                 # Create row for clipping options table
+                # Create better relevance score display with normalization
+                relevance_score = seg.get('relevance_score')
+                if relevance_score is not None:
+                    normalized_score = normalize_relevancy_score(relevance_score)
+                    relevance_display = f"{normalized_score:.1f}/10"
+                else:
+                    relevance_display = "N/A"
+                    print(f"[WARNING] Missing relevance_score in regular results for segment: {seg.get('summary', 'Unknown')}")
+                
                 clip_row = [
                     CHECKBOX_UNCHECKED,
                     file_result["filename"],
@@ -191,28 +422,56 @@ def process_files_with_progress(files: List, llm_model: str,
                     f"{seconds_to_hhmmss(seg['end'] - seg['start'])}",
                     seg["summary"],
                     ", ".join(seg["tags"]) if isinstance(seg["tags"], list) else seg["tags"],
-                    thumbnail_path
+                    relevance_display  # Relevance score
                 ]
                 clip_result.append(clip_row)
+        
+        # Generate transcription summary automatically with progress feedback
+        progress(0.95, desc="Generating transcription summary...")
+        update_processing_status(task_id, 0.95, "Tạo tóm tắt transcription...")
+        transcription_summary = None
+        try:
+            if full_transcript.strip():
+                # Show progress for summary generation
+                for step in progress.tqdm(["Analyzing transcript", "Generating summary", "Formatting output"], desc="Creating summary"):
+                    if step == "Analyzing transcript":
+                        time.sleep(0.1)  # Brief pause for visual feedback
+                    elif step == "Generating summary":
+                        transcription_summary = llm.generate_transcription_summary(full_transcript)
+                    elif step == "Formatting output":
+                        time.sleep(0.1)  # Brief pause for visual feedback
+                
+                print(f"Tạo tóm tắt transcription thành công: {len(transcription_summary.get('summary', ''))} ký tự")
+            else:
+                print("Transcript trống, bỏ qua tạo tóm tắt")
+        except Exception as e:
+            print(f"Lỗi tạo tóm tắt transcription: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            transcription_summary = None
         
         # Store results in the processing queue for later access
         with processing_queue.lock:
             processing_queue.results[task_id] = {
                 "status": "completed",
                 "result": file_results,
+                "transcription_summary": transcription_summary,
                 "timestamp": time.time(),
                 "progress": 1.0,
                 "progress_desc": "Xử lý hoàn tất"
             }
         
-        progress(1.0, desc="Hoàn tất xử lý!")
+        final_desc = "Hoàn tất xử lý!"
+        progress(1.0, desc=final_desc)
+        update_processing_status(task_id, 1.0, final_desc)
+        
+        # Clear GPU memory after successful processing
+        clear_gpu_memory()
         
         return (task_id, 
                 {"task_id": task_id, "status": "Xử lý hoàn tất",
-                 "raw_result": file_results, "result": display_result,
-                 "progress": 1.0, "progress_desc": "Xử lý hoàn tất"},
-                display_result, 
-                clip_result)
+                 "raw_result": file_results, "result": clip_result,
+                 "progress": 1.0, "progress_desc": "Xử lý hoàn tất"})
         
     except Exception as e:
         import traceback
@@ -229,14 +488,20 @@ def process_files_with_progress(files: List, llm_model: str,
                 "progress_desc": f"Lỗi: {str(e)}"
             }
         
+        # Clear GPU memory even after error
+        clear_gpu_memory()
+        
         raise gr.Error(f"Lỗi xử lý: {str(e)}")
 
 
-def process_files(files: List, llm_model: str,
-                  prompt: Optional[str] = None,
-                  whisper_model_size: Optional[str] = None,
+def process_files(files: List,
                   progress=gr.Progress()) -> Tuple[str, Dict]:
     """Processing uploaded files (legacy function for compatibility)"""
+    
+    # Use default values for removed UI components
+    llm_model = LLM_MODEL_OPTIONS[0]['label'] if LLM_MODEL_OPTIONS else "llama3.1"
+    prompt = None  # No prompt needed as per user request
+    whisper_model_size = WHISPER_MODEL_SIZE  # Use default from config
 
     # Check whether the uploaded files meet the requirements
     saved_paths = check_uploaded_files(files)
@@ -244,7 +509,14 @@ def process_files(files: List, llm_model: str,
     # Create a unique task ID
     task_id = f"task_{uuid.uuid4().hex}"
     
-    progress(0.05, desc="Khởi tạo tác vụ...")
+    # Initialize status in processing queue
+    with processing_queue.lock:
+        processing_queue.results[task_id] = {
+            "status": "processing",
+            "progress": 0.05,
+            "progress_desc": "Khởi tạo tác vụ...",
+            "timestamp": time.time()
+        }
 
     print(f"Thêm tác vụ: {task_id}, Đường dẫn tệp: {saved_paths}", flush=True)
 
@@ -252,7 +524,7 @@ def process_files(files: List, llm_model: str,
     processing_queue.add_task(task_id, saved_paths, llm_model, prompt,
                               whisper_model_size)
     
-    progress(0.1, desc="Đã thêm vào hàng đợi, đang xử lý...")
+    update_processing_status(task_id, 0.1, "Đã thêm vào hàng đợi, đang xử lý...")
 
     return task_id, {"status": "Đã tham gia hàng đợi, vui lòng đợi...",
                      "progress_desc": "Đã thêm vào hàng đợi, đang xử lý...",
@@ -326,23 +598,14 @@ def check_status(task_id: str, current_selection: List[List] = None) -> Tuple[Di
                 word_count = seg.get('word_count', len(seg.get('summary', '').split()))
                 relevance_score = seg.get('relevance_score', seg.get('relevance', 5))  # fallback compatibility
                 engagement_score = seg.get('engagement_score', 5)
-                viral_potential = seg.get('viral_potential', 'medium')
                 composite_score = seg.get('composite_score', relevance_score * 0.6 + engagement_score * 0.4)
                 
-                # Format scores for display
+                # Format scores for display with normalization
                 if isinstance(relevance_score, (int, float)):
-                    relevance_display = f"{relevance_score:.1f}/10"
+                    normalized_score = normalize_relevancy_score(relevance_score)
+                    relevance_display = f"{normalized_score:.1f}/10"
                 else:
                     relevance_display = "5.0/10"
-                
-                if isinstance(viral_potential, str):
-                    viral_display = {
-                        'low': '🔵 Thấp',
-                        'medium': '🟡 Trung bình', 
-                        'high': '🔴 Cao'
-                    }.get(viral_potential.lower(), '🟡 Trung bình')
-                else:
-                    viral_display = '🟡 Trung bình'
                 
                 clip_row = [
                     checkbox_state,  # Checkbox column - preserve state
@@ -352,10 +615,7 @@ def check_status(task_id: str, current_selection: List[List] = None) -> Tuple[Di
                     f"{seconds_to_hhmmss(seg['end'] - seg['start'])}",  # Duration
                     seg["summary"],  # Summary
                     ", ".join(seg["tags"]) if isinstance(seg["tags"], list) else seg["tags"],  # Tags
-                    str(word_count),  # Word count
-                    relevance_display,  # Relevance score
-                    viral_display,  # Viral potential
-                    thumbnail_path  # Thumbnail path
+                    relevance_display  # Relevance score
                 ]
                 clip_result.append(clip_row)
 
@@ -562,10 +822,12 @@ def start_reanalyze() -> Dict:
     }
 
 
-def reanalyze_with_prompt(task_id: str, reanalyze_llm_model: str,
+def reanalyze_with_prompt(task_id: str,
                           new_prompt: str,
-                          progress=gr.Progress()) -> Tuple[Dict, List[List], List[List]]:
+                          progress=gr.Progress()) -> Tuple[Dict, List[List]]:
     """Reanalysis with specific prompt"""
+    # Use default LLM model
+    reanalyze_llm_model = LLM_MODEL_OPTIONS[0]['label'] if LLM_MODEL_OPTIONS else "llama3.1"
     if not task_id:
         raise gr.Error("Không có tác vụ xử lý nào đang hoạt động")
 
@@ -577,7 +839,7 @@ def reanalyze_with_prompt(task_id: str, reanalyze_llm_model: str,
     if result["status"] != "completed":
         raise gr.Error("Tác vụ chưa hoàn thành, vui lòng đợi")
 
-    progress(0.1, desc="Đang khởi tạo phân tích mới...")
+    update_processing_status(task_id, 0.1, "Đang khởi tạo phân tích mới...")
     
     # Create a directory for thumbnails if it doesn't exist
     thumbnail_dir = os.path.join(TEMP_FOLDER, "thumbnails", task_id)
@@ -586,9 +848,9 @@ def reanalyze_with_prompt(task_id: str, reanalyze_llm_model: str,
     # Get raw data for reanalysis
     file_results = []
     
-    for i, file_result in progress.tqdm(enumerate(result["result"]), desc="Phân tích từng tệp", total=len(result["result"])):
-        progress(0.1 + (i / len(result["result"]) * 0.6), 
-                desc=f"Đang chuẩn bị dữ liệu cho tệp {i+1}/{len(result['result'])}...")
+    for i, file_result in enumerate(result["result"]):
+        update_processing_status(task_id, 0.1 + (i / len(result["result"]) * 0.6), 
+                f"Đang chuẩn bị dữ liệu cho tệp {i+1}/{len(result['result'])}...")
                 
         # Prepare for reanalysis
         llm = LLMProcessor(reanalyze_llm_model)
@@ -596,8 +858,8 @@ def reanalyze_with_prompt(task_id: str, reanalyze_llm_model: str,
         # Extract content and times from original transcription
         align_result = file_result.get("align_result", {})
         
-        progress(0.1 + (i / len(result["result"]) * 0.6) + 0.3, 
-                desc=f"Đang phân tích lại tệp {i+1}/{len(result['result'])}...")
+        update_processing_status(task_id, 0.1 + (i / len(result["result"]) * 0.6) + 0.3, 
+                f"Đang phân tích lại tệp {i+1}/{len(result['result'])}...")
                 
         # Reanalyze with new prompt
         narrative_segments = llm.segment_narrative(align_result, new_prompt)
@@ -613,14 +875,16 @@ def reanalyze_with_prompt(task_id: str, reanalyze_llm_model: str,
             "filepath": file_result["filepath"]
         })
     
-    progress(0.9, desc="Đang chuẩn bị kết quả...")
+    update_processing_status(task_id, 0.9, "Đang chuẩn bị kết quả...")
     
     # Format for display
     display_result = []
     clip_result = []
     
     for file_result in file_results:
-        for seg in file_result["segments"]:
+        # Only keep top 5 segments by relevance (already sorted)
+        top_segments = file_result["segments"][:5]
+        for seg in top_segments:
             # Generate thumbnail at the middle of the segment
             thumbnail_path = ""
             try:
@@ -656,6 +920,15 @@ def reanalyze_with_prompt(task_id: str, reanalyze_llm_model: str,
                    thumbnail_path]  # Add thumbnail path
             display_result.append(row)
             
+            # Create better relevance score display with normalization
+            relevance_score = seg.get('relevance_score')
+            if relevance_score is not None:
+                normalized_score = normalize_relevancy_score(relevance_score)
+                relevance_display = f"{normalized_score:.1f}/10"
+            else:
+                relevance_display = "N/A"
+                print(f"[WARNING] Missing relevance_score for segment: {seg.get('summary', 'Unknown')}")
+            
             # Create row for clipping options table
             clip_row = [
                 CHECKBOX_UNCHECKED,  # Checkbox column
@@ -665,11 +938,11 @@ def reanalyze_with_prompt(task_id: str, reanalyze_llm_model: str,
                 f"{seconds_to_hhmmss(seg['end'] - seg['start'])}",  # Duration
                 seg["summary"],  # Summary
                 ", ".join(seg["tags"]) if isinstance(seg["tags"], list) else seg["tags"],  # Tags
-                thumbnail_path  # Add thumbnail path
+                relevance_display  # Relevance score
             ]
             clip_result.append(clip_row)
             
-    progress(1.0, desc="Hoàn tất phân tích!")
+    update_processing_status(task_id, 1.0, "Hoàn tất phân tích!")
             
     return {
         "task_id": task_id,
@@ -678,157 +951,7 @@ def reanalyze_with_prompt(task_id: str, reanalyze_llm_model: str,
         "result": display_result,
         "progress": 1.0,
         "progress_desc": f"Phân tích hoàn tất cho chủ đề: {new_prompt}"
-    }, display_result, clip_result
-
-
-def optimize_for_social_media(task_id: str, platform: str, prompt: str, llm_model: str, 
-                            content_style: str, max_clips: int, progress=gr.Progress()) -> List[List]:
-    """Optimize video content for social media platforms"""
-    
-    if not task_id:
-        raise gr.Error("Không tìm thấy task ID")
-    
-    task_result = processing_queue.get_result(task_id)
-    if not task_result or "result" not in task_result:
-        raise gr.Error("Không có nội dung để tối ưu hóa")
-    
-    if not prompt:
-        raise gr.Error("Vui lòng nhập chủ đề nội dung")
-    
-    if not llm_model:
-        raise gr.Error("Vui lòng chọn mô hình AI")
-    
-    progress(0.1, desc="Khởi tạo tối ưu hóa social media...")
-    
-    try:
-        from modules.llm_processor import LLMProcessor
-        llm = LLMProcessor(llm_model)
-        
-        all_social_segments = []
-        total_files = len(task_result["result"])
-        
-        progress(0.2, desc=f"Phân tích {total_files} file cho {platform}...")
-        
-        for i, file_data in enumerate(task_result["result"]):
-            file_progress = 0.2 + (i / total_files) * 0.6
-            progress(file_progress, desc=f"Tối ưu hóa file {i+1}/{total_files} cho {platform}...")
-            
-            # Extract segments from align_result
-            align_result = file_data["align_result"]
-            
-            # Create social media optimized prompt
-            social_prompt = f"{prompt} - Phong cách: {content_style}"
-            
-            # Use social media optimization
-            social_segments = llm.segment_video_for_social_media(
-                align_result["segments"], 
-                platform=platform, 
-                prompt=social_prompt
-            )
-            
-            # Get best clips for the platform
-            best_clips = llm.get_best_clips_for_platform(social_segments, platform, max_clips)
-            
-            # Add file context to segments
-            for segment in best_clips:
-                segment['filename'] = file_data['filename']
-                segment['filepath'] = file_data['filepath']
-                
-            all_social_segments.extend(best_clips)
-        
-        progress(0.8, desc="Tạo thumbnail và xếp hạng...")
-        
-        # Sort all segments by composite score
-        all_social_segments.sort(key=lambda x: x.get('composite_score', 0), reverse=True)
-        
-        # Take only the best clips overall
-        final_clips = all_social_segments[:max_clips]
-        
-        # Generate thumbnails and create display data
-        social_result_data = []
-        
-        for i, segment in enumerate(final_clips):
-            file_progress = 0.8 + (i / len(final_clips)) * 0.15
-            progress(file_progress, desc=f"Tạo thumbnail {i+1}/{len(final_clips)}...")
-            
-            # Generate thumbnail
-            thumbnail_path = ""
-            try:
-                video_path = segment['filepath']
-                if video_path and os.path.exists(video_path):
-                    thumbnail_dir = os.path.join(TEMP_FOLDER, "thumbnails")
-                    os.makedirs(thumbnail_dir, exist_ok=True)
-                    
-                    thumbnail_time = (segment['start'] + segment['end']) / 2
-                    thumbnail_filename = f"{platform}_{segment['filename']}_{segment['start']:.1f}_{segment['end']:.1f}.jpg"
-                    thumbnail_path = os.path.join(thumbnail_dir, thumbnail_filename)
-                    
-                    if not os.path.exists(thumbnail_path):
-                        from modules.video_processor import VideoProcessor
-                        generated_path = VideoProcessor.extract_thumbnail(video_path, thumbnail_time, thumbnail_path)
-                        if generated_path and os.path.exists(generated_path):
-                            thumbnail_path = generated_path
-                        else:
-                            thumbnail_path = ""
-                    
-            except Exception as e:
-                print(f"Error generating social media thumbnail: {str(e)}")
-                thumbnail_path = ""
-            
-            # Format platform display
-            platform_display = {
-                'tiktok': '🎵 TikTok',
-                'instagram': '📸 Instagram',
-                'youtube_shorts': '🎬 YouTube',
-                'general': '📱 Universal'
-            }.get(platform, '📱 Universal')
-            
-            # Format duration
-            duration = segment['end'] - segment['start']
-            duration_display = f"{duration:.0f}s"
-            
-            # Format time range
-            time_display = f"{seconds_to_hhmmss(segment['start'])} - {seconds_to_hhmmss(segment['end'])}"
-            
-            # Format engagement score
-            engagement_score = segment.get('engagement_score', 5)
-            engagement_display = f"{engagement_score:.1f}/10 ⭐"
-            
-            # Format viral potential
-            viral_potential = segment.get('viral_potential', 'medium')
-            viral_display = {
-                'low': '🔵 Thấp',
-                'medium': '🟡 Trung bình',
-                'high': '🔴 Cao'
-            }.get(viral_potential.lower(), '🟡 Trung bình')
-            
-            # Format hashtags
-            tags = segment.get('tags', [])
-            hashtags = ' '.join([f"#{tag}" for tag in tags[:5]])  # Limit to 5 hashtags
-            
-            row = [
-                CHECKBOX_UNCHECKED,  # Selection checkbox
-                platform_display,  # Platform
-                time_display,  # Time range
-                duration_display,  # Duration
-                segment.get('summary', 'Clip viral'),  # Title
-                segment.get('hook_text', 'Bạn có biết...'),  # Hook
-                hashtags,  # Hashtags
-                engagement_display,  # Engagement score
-                viral_display,  # Viral potential
-                thumbnail_path  # Thumbnail
-            ]
-            
-            social_result_data.append(row)
-        
-        progress(1.0, desc=f"Hoàn tất! Tạo được {len(final_clips)} clip viral cho {platform}")
-        
-        return social_result_data
-        
-    except Exception as e:
-        error_msg = f"Lỗi tối ưu hóa social media: {str(e)}"
-        print(error_msg)
-        raise gr.Error(error_msg)
+    }, clip_result
 
 
 def create_gradio_interface():
@@ -847,64 +970,20 @@ def create_gradio_interface():
                         with gr.Row():
                             start_btn = gr.Button("Bắt đầu xử lý", variant="primary", scale=3)
                 with gr.Row():
-                    whisper_model_size = gr.Dropdown(
-                        choices=["tiny", "base", "small", "medium", "large", "large-v2", "large-v3"],
-                        value=WHISPER_MODEL_SIZE,
-                        label="Kích thước mô hình Whisper",
-                        interactive=True
-                    )
-                    llm_model = gr.Dropdown(
-                        choices=[model['label'] for model in LLM_MODEL_OPTIONS],
-                        value=LLM_MODEL_OPTIONS[0]['label'] if LLM_MODEL_OPTIONS else None,
-                        label="Mô hình ngôn ngữ lớn",
-                        interactive=True
-                    )
-                with gr.Row():
-                    prompt = gr.Textbox(
-                        lines=3,
-                        placeholder="""Tùy chọn: Nhập mô tả chi tiết về cách bạn muốn nội dung của bạn được phân tích. 
-                        Ví dụ: "Tôi muốn phân tích video này theo chủ đề kinh tế" hoặc "Tôi muốn tìm các phần nói về thị trường chứng khoán".""",
-                        label="Gợi ý phân tích (tùy chọn)",
-                        interactive=True
-                    )
-                with gr.Row():
-                    # Status components
+                    # Status components - simplified since progress is now in footer
                     with gr.Column():
-                        progress_desc = gr.Textbox(label="Trạng thái", interactive=False)
+                        progress_desc = gr.HTML(label="Trạng thái", value="<p style='color: #6b7280; font-style: italic;'>Sẵn sàng xử lý tệp</p>")
                     status_display = gr.JSON(label="Thông tin chi tiết", visible=False)
                     task_id = gr.Textbox(visible=False)
 
             with gr.Column(scale=3):
-                with gr.Tab("Phân tích kết quả"):
-                    result_table = gr.Dataframe(
-                        headers=["Tên tệp", "Thời gian bắt đầu", "Thời gian kết thúc", "Thời lượng",
-                                 "Tóm tắt", "Nhãn", "Hình thu nhỏ"],
-                        datatype=["str", "str", "str", "str", "str", "str", "str"],
-                        interactive=False,
-                        wrap=True
+                with gr.Tab("Tóm tắt nội dung"):
+                    gr.Markdown("### 📝 Tóm tắt nội dung tự động")
+                    transcription_summary = gr.Markdown(
+                        value="## 📋 Đang chờ xử lý\n\nTóm tắt sẽ hiển thị ở đây sau khi xử lý. Tóm tắt này sẽ được tạo tự động bằng AI từ toàn bộ nội dung video.",
+                        label="Tóm tắt nội dung livestream"
                     )
-                    
-                    # Display thumbnails for selected segment
-                    with gr.Row():
-                        selected_thumbnail = gr.Image(label="Hình thu nhỏ của phân đoạn đã chọn", 
-                                                     show_label=True, 
-                                                     height=200)
-                    
-                    # Function to update thumbnail when a row is selected
-                    def update_thumbnail(evt: gr.SelectData, results):
-                        if evt.index[0] < len(results) and len(results[evt.index[0]]) > 6:
-                            thumbnail_path = results[evt.index[0]][6]  # Get thumbnail path from the 7th column
-                            if thumbnail_path and os.path.exists(thumbnail_path):
-                                return thumbnail_path
-                        return None
-                    
-                    # Connect selection event to update thumbnail
-                    result_table.select(
-                        update_thumbnail,
-                        inputs=result_table,
-                        outputs=selected_thumbnail
-                    )
-
+                gr.Interface
                 with gr.Tab("Trích xuất phân đoạn theo chủ đề"):
                     gr.Markdown("""
                     ### Trích xuất phân đoạn theo chủ đề
@@ -918,18 +997,14 @@ def create_gradio_interface():
                         lines=2,
                         info="Hãy cụ thể về nội dung bạn đang tìm kiếm. Truy vấn càng chính xác, kết quả càng tốt."
                     )
-                    reanalyze_llm_model = gr.Dropdown(
-                        choices=[model['label'] for model in LLM_MODEL_OPTIONS],
-                        value= "llama3.1", 
-                        label="Mô hình ngôn ngữ lớn"
-                    )
                     reanalyze_btn = gr.Button("Trích xuất phân đoạn theo chủ đề", variant="secondary")
 
                 with gr.Tab("Tùy chọn cắt"):
                     segment_selection = gr.Dataframe(
                         headers=["Chọn", "Tên tệp", "Thời gian bắt đầu", "Thời gian kết thúc", "Thời lượng",
-                                 "Tóm tắt", "Từ khóa", "Số từ", "Điểm liên quan", "Tiềm năng viral", "Hình thu nhỏ"],
-                        datatype='html',
+                                 "Tóm tắt", "Từ khóa", "Điểm liên quan"],
+                        datatype=['html', 'str', 'str', 'str', 'str', 'str', 'str', 'str'],
+                        column_widths=[60, 120, 100, 100, 80, 300, 150, 100],
                         interactive=False,
                         wrap=True,
                         type="array",
@@ -941,31 +1016,20 @@ def create_gradio_interface():
                         select_all_btn = gr.Button("Chọn tất cả", variant="secondary", size="sm")
                         deselect_all_btn = gr.Button("Bỏ chọn tất cả", variant="secondary", size="sm")
                     
-                    # Display thumbnail for selected clip
-                    with gr.Row():
-                        clip_thumbnail = gr.Image(label="Hình thu nhỏ của phân đoạn đã chọn", 
-                                                 show_label=True, 
-                                                 height=200)
-                    
-                    # Function to toggle selection and update thumbnail
-                    def select_clip_and_show_thumbnail(segment_selection: List[List], evt: gr.SelectData) -> Tuple[List[List], str]:
+                    # Function to toggle selection
+                    def select_clip_and_toggle(segment_selection: List[List], evt: gr.SelectData) -> List[List]:
                         selected_row = segment_selection[evt.index[0]]
                         # Toggle selection state for checkbox column (index 0)
                         selected_row[0] = CHECKBOX_CHECKED \
                             if selected_row[0] == CHECKBOX_UNCHECKED else CHECKBOX_UNCHECKED
                         
-                        # Get thumbnail path
-                        thumbnail_path = ""
-                        if len(selected_row) > 7:
-                            thumbnail_path = selected_row[7]
-                            
-                        return segment_selection, thumbnail_path if thumbnail_path and os.path.exists(thumbnail_path) else None
+                        return segment_selection
                     
                     # Connect selection event
                     segment_selection.select(
-                        select_clip_and_show_thumbnail,
+                        select_clip_and_toggle,
                         inputs=segment_selection,
-                        outputs=[segment_selection, clip_thumbnail]
+                        outputs=[segment_selection]
                     )
                     # Add download mode selection
                     download_mode = gr.Radio(
@@ -976,155 +1040,313 @@ def create_gradio_interface():
                     clip_btn = gr.Button("Biên tập", variant="primary")
                     download_output = gr.File(label="Tải xuống kết quả cắt")
 
-                with gr.Tab("Tối ưu hóa cho mạng xã hội"):
-                    gr.Markdown("""
-                    ### 🚀 Tối ưu hóa nội dung cho TikTok, Instagram Reels, YouTube Shorts
-                    Tính năng này phân tích video và tạo ra các clip ngắn được tối ưu hóa cho từng nền tảng mạng xã hội, 
-                    tập trung vào viral potential và engagement.
-                    """)
-                    
-                    with gr.Row():
-                        with gr.Column():
-                            social_platform = gr.Dropdown(
-                                choices=[
-                                    ("TikTok (15-180s, viral hooks)", "tiktok"),
-                                    ("Instagram Reels (15-90s, aesthetic)", "instagram"), 
-                                    ("YouTube Shorts (15-60s, retention)", "youtube_shorts"),
-                                    ("Tổng hợp (tối ưu chung)", "general")
-                                ],
-                                value="tiktok",
-                                label="Chọn nền tảng mục tiêu",
-                                info="Mỗi nền tảng có chiến lược tối ưu khác nhau"
-                            )
-                            
-                            social_prompt = gr.Textbox(
-                                label="Chủ đề hoặc xu hướng muốn tạo nội dung",
-                                placeholder="Ví dụ: Mẹo học tiếng Anh hiệu quả, Công thức nấu ăn viral, Tips làm đẹp...",
-                                lines=2,
-                                info="Mô tả nội dung bạn muốn tạo cho social media"
-                            )
-                            
-                            max_clips = gr.Slider(
-                                minimum=3,
-                                maximum=10,
-                                value=5,
-                                step=1,
-                                label="Số lượng clip tối đa",
-                                info="Số clip viral nhất sẽ được chọn"
-                            )
-                            
-                        with gr.Column():
-                            social_llm_model = gr.Dropdown(
-                                choices=[model['label'] for model in LLM_MODEL_OPTIONS],
-                                value="llama3.1",
-                                label="Mô hình AI để phân tích"
-                            )
-                            
-                            content_style = gr.Radio(
-                                choices=[
-                                    ("Giáo dục/Thông tin", "educational"),
-                                    ("Giải trí/Hài hước", "entertainment"),
-                                    ("Cảm hứng/Động lực", "inspirational"),
-                                    ("Tutorial/Hướng dẫn", "tutorial"),
-                                    ("Trending/Xu hướng", "trending")
-                                ],
-                                value="educational",
-                                label="Phong cách nội dung",
-                                info="Xác định cách tiếp cận content"
-                            )
-                    
-                    social_optimize_btn = gr.Button("🎯 Tạo nội dung viral", variant="primary", size="lg")
-                    
-                    # Results display for social media optimization
-                    social_results = gr.Dataframe(
-                        headers=["Chọn", "Nền tảng", "Thời gian", "Thời lượng", "Tiêu đề viral", "Hook", 
-                                "Hashtags", "Điểm engagement", "Viral potential", "Thumbnail"],
-                        datatype='html',
-                        interactive=False,
-                        wrap=True,
-                        type="array",
-                        label="Nội dung viral được tối ưu - Sắp xếp theo điểm engagement",
-                        visible=False
-                    )
-                    
-                    # Display thumbnail for selected social media clip
-                    with gr.Row(visible=False) as social_thumbnail_row:
-                        social_clip_thumbnail = gr.Image(label="Hình thu nhỏ của clip viral đã chọn", 
-                                                        show_label=True, 
-                                                        height=200)
-                    
-                    # Function to toggle selection and update thumbnail for social media
-                    def select_social_clip_and_show_thumbnail(social_results: List[List], evt: gr.SelectData) -> Tuple[List[List], str]:
-                        selected_row = social_results[evt.index[0]]
-                        # Toggle selection state for checkbox column (index 0)
-                        selected_row[0] = CHECKBOX_CHECKED \
-                            if selected_row[0] == CHECKBOX_UNCHECKED else CHECKBOX_UNCHECKED
-                        
-                        # Get thumbnail path (column 9)
-                        thumbnail_path = ""
-                        if len(selected_row) > 9:
-                            thumbnail_path = selected_row[9]
-                            
-                        return social_results, thumbnail_path if thumbnail_path and os.path.exists(thumbnail_path) else None
-                    
-                    # Connect selection event for social media results
-                    social_results.select(
-                        select_social_clip_and_show_thumbnail,
-                        inputs=social_results,
-                        outputs=[social_results, social_clip_thumbnail]
-                    )
-                    
-                    # Selection controls for social media results
-                    with gr.Row(visible=False) as social_controls:
-                        social_select_all_btn = gr.Button("Chọn tất cả", variant="secondary", size="sm")
-                        social_deselect_all_btn = gr.Button("Bỏ chọn tất cả", variant="secondary", size="sm")
-                        social_download_btn = gr.Button("📱 Tải xuống clip viral", variant="primary", size="lg")
-                    
-                    # Download options for social media clips
-                    with gr.Row(visible=False) as social_download_options:
-                        social_download_mode = gr.Radio(
-                            choices=["Đóng gói thành tệp zip", "Tải riêng lẻ theo nền tảng"],
-                            label="Cách tải xuống",
-                            value="Đóng gói thành tệp zip",
-                            info="Zip: Tất cả clip trong 1 file | Riêng lẻ: Mỗi nền tảng 1 folder"
-                        )
-                    
-                    social_download_output = gr.File(label="Tải xuống clip viral", visible=False)
+        # Progress bar footer - dedicated space at the bottom of the page
+        with gr.Row():
+            with gr.Column():
+                gr.Markdown("---")  # Separator line
+                footer_progress = gr.HTML(
+                    label="🔄 Tiến trình xử lý", 
+                    value="""
+                    <div style="margin: 20px 0; padding: 20px; background: #f8fafc; border-radius: 10px; text-align: center; font-family: system-ui, -apple-system, sans-serif;">
+                        <div style="font-size: 16px; font-weight: 500; color: #374151; margin-bottom: 10px;">
+                            ⏳ Chưa có tác vụ nào đang xử lý
+                        </div>
+                        <div style="font-size: 14px; color: #6b7280;">
+                            Tiến trình xử lý sẽ hiển thị ở đây khi bạn bắt đầu xử lý tệp
+                        </div>
+                    </div>
+                    """,
+                    visible=True
+                )
+
+
 
         # Schedule the status update loop with selection preservation
         def check_status_with_selection(task_id, current_selection):
             status, result_table_data, clip_data = check_status(task_id, current_selection)
             # Stop timer if processing is complete or there's an error
             if status.get("status") in ["Xử lý hoàn tất", "Lỗi"] or status.get("status", "").startswith("Lỗi:"):
-                return status, result_table_data, clip_data, gr.Timer(active=False)
-            return status, result_table_data, clip_data, gr.Timer(active=True)
+                return status, clip_data, gr.Timer(active=False)
+            return status, clip_data, gr.Timer(active=True)
             
-        timer = gr.Timer(2, active=False)
+        timer = gr.Timer(1, active=False)  # Update every 1 second for smoother progress
         timer.tick(check_status_with_selection, [task_id, segment_selection],
-                   outputs=[status_display, result_table, segment_selection, timer])
+                   outputs=[status_display, segment_selection, timer])
 
-        # Update progress description when status changes
-        def update_progress_info(status_info):
+        # Update progress description when status changes (with debouncing to reduce flicker)
+        last_progress_update = {"time": 0, "desc": ""}
+        
+        def update_footer_progress(status_info):
+            current_time = time.time()
             desc = status_info.get("progress_desc", "")
-            return desc
+            progress = status_info.get("progress", 0.0)
             
-        # Monitor status changes to update progress description
+            print(f"[DEBUG] update_footer_progress called: progress={progress:.2f}, desc='{desc}'")
+            
+            # Only update if enough time has passed or status changed significantly
+            if (current_time - last_progress_update["time"] > 0.2 or 
+                desc != last_progress_update["desc"]):
+                last_progress_update["time"] = current_time
+                last_progress_update["desc"] = desc
+                
+                # Create footer-style progress bar with enhanced design
+                if progress > 0 and progress < 1.0:
+                    percentage = min(100, int(progress * 100))
+                    html_content = f"""
+                    <div style="
+                        margin: 20px 0; 
+                        padding: 25px; 
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                        border-radius: 15px; 
+                        color: white;
+                        font-family: system-ui, -apple-system, sans-serif;
+                        box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+                        position: relative;
+                        overflow: hidden;
+                    ">
+                        <!-- Background animation -->
+                        <div style="
+                            position: absolute;
+                            top: 0;
+                            left: 0;
+                            right: 0;
+                            bottom: 0;
+                            background: linear-gradient(45deg, transparent 30%, rgba(255,255,255,0.1) 50%, transparent 70%);
+                            animation: shimmer 2s infinite;
+                        "></div>
+                        
+                        <div style="position: relative; z-index: 1;">
+                            <div style="
+                                display: flex; 
+                                justify-content: space-between; 
+                                align-items: center; 
+                                margin-bottom: 15px;
+                            ">
+                                <div style="font-size: 18px; font-weight: 600;">
+                                    🔄 Đang xử lý...
+                                </div>
+                                <div style="font-size: 16px; font-weight: 500;">
+                                    {percentage}%
+                                </div>
+                            </div>
+                            
+                            <div style="margin-bottom: 15px; font-size: 14px; opacity: 0.9;">
+                                {desc}
+                            </div>
+                            
+                            <div style="
+                                background: rgba(255,255,255,0.2); 
+                                border-radius: 25px; 
+                                overflow: hidden; 
+                                height: 12px;
+                                position: relative;
+                            ">
+                                <div style="
+                                    background: linear-gradient(90deg, #ffffff 0%, #f0f9ff 100%);
+                                    height: 100%;
+                                    border-radius: 25px;
+                                    width: {percentage}%;
+                                    transition: width 0.5s ease;
+                                    box-shadow: 0 2px 10px rgba(255,255,255,0.3);
+                                "></div>
+                            </div>
+                        </div>
+                        
+                        <style>
+                            @keyframes shimmer {{
+                                0% {{ transform: translateX(-100%); }}
+                                100% {{ transform: translateX(200%); }}
+                            }}
+                        </style>
+                    </div>
+                    """
+                    print(f"[DEBUG] Generated footer progress bar HTML for {percentage}%")
+                elif desc and progress >= 1.0:
+                    # Completion state
+                    html_content = f"""
+                    <div style="
+                        margin: 20px 0; 
+                        padding: 25px; 
+                        background: linear-gradient(135deg, #10b981 0%, #065f46 100%); 
+                        border-radius: 15px; 
+                        color: white;
+                        font-family: system-ui, -apple-system, sans-serif;
+                        box-shadow: 0 10px 30px rgba(16,185,129,0.3);
+                        text-align: center;
+                    ">
+                        <div style="font-size: 20px; font-weight: 600; margin-bottom: 10px;">
+                            ✅ Xử lý hoàn tất!
+                        </div>
+                        <div style="font-size: 14px; opacity: 0.9;">
+                            {desc}
+                        </div>
+                    </div>
+                    """
+                    print(f"[DEBUG] Generated completion HTML: {desc}")
+                elif desc and ("lỗi" in desc.lower() or "error" in desc.lower()):
+                    # Error state
+                    html_content = f"""
+                    <div style="
+                        margin: 20px 0; 
+                        padding: 25px; 
+                        background: linear-gradient(135deg, #ef4444 0%, #991b1b 100%); 
+                        border-radius: 15px; 
+                        color: white;
+                        font-family: system-ui, -apple-system, sans-serif;
+                        box-shadow: 0 10px 30px rgba(239,68,68,0.3);
+                        text-align: center;
+                    ">
+                        <div style="font-size: 20px; font-weight: 600; margin-bottom: 10px;">
+                            ❌ Có lỗi xảy ra
+                        </div>
+                        <div style="font-size: 14px; opacity: 0.9;">
+                            {desc}
+                        </div>
+                    </div>
+                    """
+                    print(f"[DEBUG] Generated error HTML: {desc}")
+                else:
+                    # Idle state
+                    html_content = """
+                    <div style="margin: 20px 0; padding: 20px; background: #f8fafc; border-radius: 10px; text-align: center; font-family: system-ui, -apple-system, sans-serif;">
+                        <div style="font-size: 16px; font-weight: 500; color: #374151; margin-bottom: 10px;">
+                            ⏳ Chưa có tác vụ nào đang xử lý
+                        </div>
+                        <div style="font-size: 14px; color: #6b7280;">
+                            Tiến trình xử lý sẽ hiển thị ở đây khi bạn bắt đầu xử lý tệp
+                        </div>
+                    </div>
+                    """
+                    print("[DEBUG] Generated idle state HTML")
+                    
+                return html_content
+            return gr.update()
+            
+        # Also update the simple status in the status column
+        def update_simple_status(status_info):
+            """Update simple status text in the status column"""
+            status = status_info.get("status", "")
+            progress = status_info.get("progress", 0.0)
+            
+            if progress > 0 and progress < 1.0:
+                return f"<p style='color: #3b82f6; font-weight: 500;'>⏳ Đang xử lý... ({int(progress*100)}%)</p>"
+            elif "hoàn tất" in status.lower():
+                return f"<p style='color: #10b981; font-weight: 500;'>✅ {status}</p>"
+            elif "lỗi" in status.lower():
+                return f"<p style='color: #ef4444; font-weight: 500;'>❌ {status}</p>"
+            else:
+                return f"<p style='color: #6b7280;'>{status or 'Sẵn sàng xử lý tệp'}</p>"
+        
+        # Update both footer progress and status column
         status_display.change(
-            update_progress_info,
+            update_simple_status,
             inputs=status_display,
-            outputs=progress_desc
-        )
-
-        # Event bindings
-        start_btn.click(
-            process_files_with_progress,
-            inputs=[upload_files, llm_model, prompt, whisper_model_size],
-            outputs=[task_id, status_display, result_table, segment_selection]
-        ).then(
-            lambda: gr.Timer(active=False),  # No need for timer since we process directly
-            outputs=timer,
+            outputs=progress_desc,
             show_progress=False
         )
+        
+        # Monitor status changes to update footer progress bar
+        status_display.change(
+            update_footer_progress,
+            inputs=status_display,
+            outputs=footer_progress,
+            show_progress=False  # Hide the automatic progress indicator
+        )
+
+        # Automatically load summary when processing completes
+        def handle_completion(status_info):
+            if status_info and status_info.get("status") == "Xử lý hoàn tất":
+                task_id = status_info.get("task_id")
+                if task_id:
+                    print(f"[DEBUG] Processing completed for task {task_id}, loading summary...")
+                    try:
+                        summary = get_transcription_summary_for_task(task_id)
+                        print(f"[DEBUG] Summary loaded: {len(summary)} characters")
+                        return summary
+                    except Exception as e:
+                        print(f"[ERROR] Failed to load summary: {e}")
+                        return """
+## ⚠️ Lỗi tải tóm tắt
+
+Có lỗi xảy ra khi tải tóm tắt nội dung. Vui lòng thử lại.
+                        """
+            return gr.update()
+        
+        status_display.change(
+            handle_completion,
+            inputs=status_display,
+            outputs=transcription_summary,
+            show_progress=False
+        )
+
+        # Event bindings  
+        def start_processing_and_monitoring(files):
+            """Start processing and immediately activate monitoring"""
+            task_id, initial_status = process_files_with_progress(files)
+            
+            # Create initial footer progress HTML
+            initial_footer_html = """
+            <div style="
+                margin: 20px 0; 
+                padding: 25px; 
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                border-radius: 15px; 
+                color: white;
+                font-family: system-ui, -apple-system, sans-serif;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+                position: relative;
+                overflow: hidden;
+            ">
+                <div style="position: relative; z-index: 1;">
+                    <div style="
+                        display: flex; 
+                        justify-content: space-between; 
+                        align-items: center; 
+                        margin-bottom: 15px;
+                    ">
+                        <div style="font-size: 18px; font-weight: 600;">
+                            🚀 Bắt đầu xử lý...
+                        </div>
+                        <div style="font-size: 16px; font-weight: 500;">
+                            5%
+                        </div>
+                    </div>
+                    
+                    <div style="margin-bottom: 15px; font-size: 14px; opacity: 0.9;">
+                        Khởi tạo tác vụ...
+                    </div>
+                    
+                    <div style="
+                        background: rgba(255,255,255,0.2); 
+                        border-radius: 25px; 
+                        overflow: hidden; 
+                        height: 12px;
+                        position: relative;
+                    ">
+                        <div style="
+                            background: linear-gradient(90deg, #ffffff 0%, #f0f9ff 100%);
+                            height: 100%;
+                            border-radius: 25px;
+                            width: 5%;
+                            transition: width 0.5s ease;
+                            box-shadow: 0 2px 10px rgba(255,255,255,0.3);
+                        "></div>
+                    </div>
+                </div>
+            </div>
+            """
+            
+            return task_id, initial_status, gr.Timer(active=True), initial_footer_html
+        
+        start_btn.click(
+            start_processing_and_monitoring,
+            inputs=[upload_files],
+            outputs=[task_id, status_display, timer, footer_progress],
+            show_progress=True  # Show the floating progress bar as well
+        )
+        
+        # Remove get_summary_btn and related click event (no longer needed)
+        # The summary will be generated and displayed automatically after processing
 
         reanalyze_btn.click(
             start_reanalyze,
@@ -1132,8 +1354,8 @@ def create_gradio_interface():
             outputs=status_display,
         ).then(
             reanalyze_with_prompt,
-            inputs=[task_id, reanalyze_llm_model, new_prompt],
-            outputs=[status_display, result_table, segment_selection]
+            inputs=[task_id, new_prompt],
+            outputs=[status_display, segment_selection]
         )
 
         clip_btn.click(
@@ -1154,35 +1376,8 @@ def create_gradio_interface():
             outputs=[segment_selection]
         )
 
-        social_optimize_btn.click(
-            optimize_for_social_media,
-            inputs=[task_id, social_platform, social_prompt, social_llm_model, content_style, max_clips],
-            outputs=social_results
-        ).then(
-            lambda: (gr.update(visible=True), gr.update(visible=True), gr.update(visible=True), 
-                    gr.update(visible=True), gr.update(visible=True)),
-            outputs=[social_results, social_controls, social_download_options, social_download_output, social_thumbnail_row]
-        )
-
-        # Event bindings for social media tab
-        social_select_all_btn.click(
-            select_all_clips,
-            inputs=[social_results],
-            outputs=[social_results]
-        )
-
-        social_deselect_all_btn.click(
-            deselect_all_clips,
-            inputs=[social_results],
-            outputs=[social_results]
-        )
-
-        social_download_btn.click(
-            download_social_media_clips,
-            inputs=[task_id, social_results, social_download_mode],
-            outputs=social_download_output
-        )
-
+        # Removed chapter-related functionality - replaced with simple transcription summary
+        
         return app
 
 
@@ -1210,152 +1405,3 @@ def deselect_all_clips(segment_selection: List[List]) -> List[List]:
             row[0] = CHECKBOX_UNCHECKED
     
     return segment_selection
-
-
-def download_social_media_clips(task_id: str, social_results: List[List], download_mode: str) -> str:
-    """Download selected social media optimized clips"""
-    if not task_id:
-        raise gr.Error("Không có tác vụ xử lý nào đang hoạt động")
-    
-    if not social_results:
-        raise gr.Error("Chưa có kết quả tối ưu hóa nào")
-    
-    # Filter selected clips
-    selected_clips = [clip for clip in social_results if clip[0] == CHECKBOX_CHECKED]
-    
-    if not selected_clips:
-        raise gr.Error("Vui lòng chọn ít nhất một clip để tải xuống")
-    
-    # Get the original result to access file paths
-    result = processing_queue.get_result(task_id)
-    if not result or "data" not in result:
-        raise gr.Error("Không tìm thấy dữ liệu tác vụ")
-        
-    # For testing purposes, also check if it's a completed result
-    if result.get("status") == "completed" and "data" in result:
-        file_data_source = result["data"]["raw_result"]
-    elif "result" in result:  # Legacy format
-        # Convert legacy format to expected format
-        file_data_source = result["result"] 
-    else:
-        raise gr.Error("Định dạng dữ liệu không hợp lệ")
-    
-    # Create output directory
-    task_output_dir = os.path.join(OUTPUT_FOLDER, f"social_media_{task_id}")
-    if os.path.exists(task_output_dir):
-        clear_directory_fast(task_output_dir)
-    os.makedirs(task_output_dir, exist_ok=True)
-    
-    # Organize files into segments  
-    file_segments = {}
-    for file_data in file_data_source:
-        file_segments[file_data["filename"]] = {
-            "segments": file_data["segments"],
-            "filepath": file_data["filepath"],
-            "ext": os.path.splitext(file_data["filepath"])[1]
-        }
-    
-    output_files = []
-    platform_folders = {}
-    
-    for clip_data in selected_clips:
-        # Extract info from social media clip data
-        # Format: ["Chọn", "Nền tảng", "Thời gian", "Thời lượng", "Tiêu đề viral", "Hook", 
-        #          "Hashtags", "Điểm engagement", "Viral potential", "Thumbnail"]
-        platform = clip_data[1]
-        time_range = clip_data[2]  # Format: "00:01:23 - 00:02:45"
-        title = clip_data[4]
-        
-        # Parse time range
-        try:
-            start_str, end_str = time_range.split(' - ')
-            start_seconds = hhmmss_to_seconds(start_str)
-            end_seconds = hhmmss_to_seconds(end_str)
-        except Exception as e:
-            print(f"Error parsing time range {time_range}: {e}")
-            continue
-            
-        # Find the corresponding file and segment
-        clip_created = False
-        for filename, file_info in file_segments.items():
-            for segment in file_info["segments"]:
-                # Check if this segment matches (with some tolerance)
-                if (abs(segment["start"] - start_seconds) < 1.0 and 
-                    abs(segment["end"] - end_seconds) < 1.0):
-                    
-                    # Create platform-specific folder if needed
-                    if download_mode == "Tải riêng lẻ theo nền tảng":
-                        if platform not in platform_folders:
-                            platform_folder = os.path.join(task_output_dir, f"{platform}_clips")
-                            os.makedirs(platform_folder, exist_ok=True)
-                            platform_folders[platform] = platform_folder
-                        output_folder = platform_folders[platform]
-                    else:
-                        output_folder = task_output_dir
-                    
-                    # Generate safe filename with viral title
-                    safe_title = generate_safe_filename(title[:50])  # Limit length
-                    safe_filename = f"{platform}_{safe_title}"
-                    
-                    # Clip the video
-                    input_path = file_info["filepath"]
-                    ext = file_info["ext"]
-                    
-                    output_path = os.path.join(output_folder, f"{safe_filename}{ext}")
-                    
-                    # Use ffmpeg to extract the clip
-                    cmd = [
-                        'ffmpeg', '-i', input_path,
-                        '-ss', str(start_seconds),
-                        '-t', str(end_seconds - start_seconds),
-                        '-c', 'copy',
-                        '-avoid_negative_ts', 'make_zero',
-                        output_path
-                    ]
-                    
-                    try:
-                        subprocess.run(cmd, check=True, capture_output=True)
-                        output_files.append(output_path)
-                        clip_created = True
-                        
-                        # Create a metadata file with viral content info
-                        metadata_path = os.path.join(output_folder, f"{safe_filename}_metadata.txt")
-                        with open(metadata_path, 'w', encoding='utf-8') as f:
-                            f.write(f"Nền tảng: {platform}\n")
-                            f.write(f"Tiêu đề viral: {title}\n")
-                            f.write(f"Hook: {clip_data[5]}\n")
-                            f.write(f"Hashtags: {clip_data[6]}\n")
-                            f.write(f"Điểm engagement: {clip_data[7]}\n")
-                            f.write(f"Viral potential: {clip_data[8]}\n")
-                            f.write(f"Thời gian: {time_range}\n")
-                        
-                        break
-                        
-                    except subprocess.CalledProcessError as e:
-                        print(f"FFmpeg error: {e.stderr.decode('utf-8')}")
-                        continue
-                        
-            if clip_created:
-                break
-    
-    if not output_files:
-        raise gr.Error("Không thể tạo clip nào. Vui lòng kiểm tra lại dữ liệu.")
-    
-    # Return result based on download mode
-    if download_mode == "Đóng gói thành tệp zip":
-        # Create zip file with all clips and metadata
-        zip_path = os.path.join(task_output_dir, "viral_clips.zip")
-        with zipfile.ZipFile(zip_path, 'w') as zipf:
-            # Add all video files and metadata
-            for root, dirs, files in os.walk(task_output_dir):
-                for file in files:
-                    if file != "viral_clips.zip":  # Don't include the zip itself
-                        file_path = os.path.join(root, file)
-                        # Use relative path in zip
-                        arcname = os.path.relpath(file_path, task_output_dir)
-                        zipf.write(file_path, arcname)
-        
-        return zip_path
-    else:
-        # For platform-specific download, return the main directory
-        return task_output_dir

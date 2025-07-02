@@ -17,7 +17,8 @@ class FasterWhisperSpeechRecognizer(SpeechRecognizer):
             language="vi"
     ):
         super().__init__(model_size, device, device_index=device_index, compute_type=compute_type,
-                         batch_size=batch_size)
+                         batch_size=batch_size, language=language)
+        self.language = language
         if beam_size > 0:
             self.beam_size = beam_size
         print(f"Loading the Whisper model: {self.model_size}")
@@ -48,7 +49,13 @@ class FasterWhisperSpeechRecognizer(SpeechRecognizer):
         segment_list = []
         for segment in segments:
             # print("[%.2fs -> %.2fs] %s" % (segment.start, segment.end, segment.text))
-            segment_list.append(segment)
+            # Convert Segment object to dictionary format for compatibility with WhisperX
+            segment_dict = {
+                "start": segment.start,
+                "end": segment.end,
+                "text": segment.text
+            }
+            segment_list.append(segment_dict)
         # format result
         result = {"language": info.language, "segments": segment_list}
         return result

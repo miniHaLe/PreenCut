@@ -2,8 +2,9 @@ from queue import Queue
 from threading import Thread, Lock
 import os
 import time
-from modules.speech_recognizers.speech_recognizer_factory import \
-    SpeechRecognizerFactory
+import torch
+import gc
+from services.speech_recognition_service import SpeechRecognitionService
 from modules.text_aligner import TextAligner
 from modules.llm_processor import LLMProcessor
 from modules.video_processor import VideoProcessor
@@ -24,6 +25,29 @@ class ProcessingQueue:
         # Start the cleanup thread
         self.cleanup_worker = Thread(target=self._cleanup_results, daemon=True)
         self.cleanup_worker.start()
+
+    def _clear_gpu_memory(self):
+        """Clear GPU VRAM after task completion"""
+        try:
+            if torch.cuda.is_available():
+                # Clear PyTorch GPU cache
+                torch.cuda.empty_cache()
+                
+                # Force garbage collection
+                gc.collect()
+                
+                # Get GPU memory info for logging
+                if torch.cuda.device_count() > 0:
+                    for i in range(torch.cuda.device_count()):
+                        allocated = torch.cuda.memory_allocated(i) / 1024**3  # GB
+                        cached = torch.cuda.memory_reserved(i) / 1024**3      # GB
+                        print(f"GPU {i} - Allocated: {allocated:.2f}GB, Cached: {cached:.2f}GB")
+                
+                print("✅ GPU VRAM cleared successfully")
+            else:
+                print("ℹ️ No GPU available, skipping VRAM cleanup")
+        except Exception as e:
+            print(f"⚠️ Error clearing GPU memory: {e}")
 
     def add_task(self, task_id: str, files: List[str], llm_model: str,
                  prompt: Optional[str],
@@ -64,8 +88,7 @@ class ProcessingQueue:
 
                 # Process each file
                 file_results = []
-                recognizer = SpeechRecognizerFactory.get_speech_recognizer_by_type(
-                    SPEECH_RECOGNIZER_TYPE, model_size)
+                speech_service = SpeechRecognitionService(recognizer_type=SPEECH_RECOGNIZER_TYPE)
                 llm = LLMProcessor(self.results[task_id].get("llm_model"))
 
                 total_files = len(files)
@@ -94,8 +117,8 @@ class ProcessingQueue:
                     print(f"Start speech recognition: {file_path}")
                     with self.lock:
                         self.results[task_id]["progress"] = file_progress_base + file_progress_weight * 0.2
-                        self.results[task_id]["progress_desc"] = f"Đang nhận dạng giọng nói từ tệp {i + 1}/{total_files}"
-                    result = recognizer.transcribe(audio_path)
+                        self.results[task_id]["progress_desc"] = f"Đang nhận dạng giọng nói từ video {i + 1}/{total_files}"
+                    result = speech_service.transcribe_audio(audio_path)
                     print(
                         f"Speech recognition completed, number of segments: {len(result['segments'])}")
 
@@ -104,7 +127,7 @@ class ProcessingQueue:
                         print("Start text alignment...")
                         with self.lock:
                             self.results[task_id]["progress"] = file_progress_base + file_progress_weight * 0.6
-                            self.results[task_id]["progress_desc"] = f"Đang căn chỉnh văn bản từ tệp {i + 1}/{total_files}"
+                            self.results[task_id]["progress_desc"] = f"Đang căn chỉnh và phân tích video {i + 1}/{total_files}"
                         aligner = TextAligner(result['language'])
                         result = aligner.align(result["segments"], audio_path)
                         print(
@@ -114,7 +137,7 @@ class ProcessingQueue:
                     print("Calling large model for segmentation...")
                     with self.lock:
                         self.results[task_id]["progress"] = file_progress_base + file_progress_weight * 0.8
-                        self.results[task_id]["progress_desc"] = f"Đang phân đoạn và tóm tắt tệp {i + 1}/{total_files}"
+                        self.results[task_id]["progress_desc"] = f"Đang phân đoạn và tóm tắt video {i + 1}/{total_files}"
                     segments = llm.segment_video(result["segments"], prompt)
                     print(f"The large model is divided into sections: {len(segments)}")
 
@@ -129,7 +152,7 @@ class ProcessingQueue:
                     # Update completion of this file
                     with self.lock:
                         self.results[task_id]["progress"] = file_progress_base + file_progress_weight
-                        self.results[task_id]["progress_desc"] = f"Đã hoàn thành tệp {i + 1}/{total_files}"
+                        self.results[task_id]["progress_desc"] = f"Đã hoàn thành phân tích video {i + 1}/{total_files}"
 
                 # Update results
                 with self.lock:
@@ -137,6 +160,8 @@ class ProcessingQueue:
                     self.results[task_id]["result"] = file_results
                     self.results[task_id]["progress"] = 1.0
                     self.results[task_id]["progress_desc"] = "Xử lý hoàn tất"
+
+                print(f"✅ Task {task_id} completed successfully")
 
             except Exception as e:
                 import traceback
@@ -148,8 +173,14 @@ class ProcessingQueue:
                     self.results[task_id]["error"] = str(e)
                     self.results[task_id]["progress"] = 0.0
                     self.results[task_id]["progress_desc"] = f"Lỗi: {str(e)}"
+                
+                print(f"❌ Task {task_id} failed with error: {str(e)}")
+            
             finally:
+                # Always clear GPU memory after task completion (success or failure)
+                self._clear_gpu_memory()
                 self.queue.task_done()
+                print(f"🧹 Task {task_id} cleanup completed")
 
     def get_result(self, task_id: str) -> Dict:
         """Get task results"""

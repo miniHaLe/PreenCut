@@ -185,4 +185,15 @@ cython_debug/
 .gradio
 temp/*
 data/*
-
+test*
+*refactoring*
+*refactor*
+*refactored*
+*.bak
+*.tmp
+*.temp
+*.swp
+*.swo
+*.swn
+*.orig
+*fix*

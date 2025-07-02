@@ -7,7 +7,6 @@ from .interfaces import (
     # Data classes
     ProcessingTask,
     SegmentInfo,
-    SocialMediaClip,
     
     # Service interfaces
     IFileValidationService,
@@ -38,7 +37,6 @@ __all__ = [
     # Data classes
     'ProcessingTask',
     'SegmentInfo',
-    'SocialMediaClip',
     
     # Service interfaces
     'IFileValidationService',

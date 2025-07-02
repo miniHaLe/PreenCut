@@ -39,19 +39,6 @@ class SegmentInfo:
     engagement_score: Optional[float] = None
 
 
-@dataclass
-class SocialMediaClip:
-    """Social media optimized clip."""
-    segment: SegmentInfo
-    platform: str
-    title: str
-    hook_text: str
-    hashtags: List[str]
-    viral_potential: str
-    engagement_score: float
-    composite_score: float
-
-
 class IFileValidationService(ABC):
     """Service for validating uploaded files."""
     
@@ -127,13 +114,6 @@ class ILLMService(ABC):
         """Extract segments related to specific topic."""
         pass
     
-    @abstractmethod
-    def optimize_for_social_media(self, segments: List[SegmentInfo], platform: str, 
-                                 prompt: str, content_style: str) -> List[SocialMediaClip]:
-        """Optimize content for social media platforms."""
-        pass
-
-
 class ITaskManagementService(ABC):
     """Service for managing processing tasks."""
     
@@ -193,13 +173,6 @@ class IDownloadService(ABC):
         """Create archive of selected clips."""
         pass
     
-    @abstractmethod
-    def create_social_media_archive(self, task_id: str, selected_clips: List[Dict],
-                                  download_mode: str) -> str:
-        """Create archive of social media clips."""
-        pass
-
-
 class ICacheService(ABC):
     """Service for caching frequently accessed data."""
     
